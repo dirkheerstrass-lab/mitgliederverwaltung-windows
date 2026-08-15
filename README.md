@@ -104,8 +104,16 @@ PyInstaller ist bereits Teil von `requirements.txt` (Schritt 3 oben) und muss
 nicht separat installiert werden. Im Repo-Root ausführen:
 
 ```powershell
-pyinstaller build/pyinstaller.spec --noconfirm
+python -m PyInstaller build/pyinstaller.spec --noconfirm
 ```
+
+> Der Aufruf über `python -m PyInstaller` (statt direkt `pyinstaller ...`) ist
+> bewusst so gewählt: Falls PowerShell mit
+> `Die Benennung "pyinstaller" wurde nicht als Name eines Cmdlet ... erkannt`
+> abbricht, liegt das daran, dass der `Scripts`-Ordner der Python-Installation
+> nicht im `PATH` liegt. `python -m PyInstaller` funktioniert davon
+> unabhängig immer, solange `pip install -r requirements.txt` erfolgreich war
+> (prüfbar mit `python -m pip show pyinstaller`).
 
 Der Build dauert wegen PyQt5/pandas typischerweise **einige Minuten**. Das
 Ergebnis liegt danach unter:
