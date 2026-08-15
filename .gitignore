@@ -1,0 +1,25 @@
+# Mitgliederdaten (CSV, Fotos, Anhänge enthalten echte Personendaten)
+data/
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller build/dist output (build/pyinstaller.spec selbst bleibt versioniert)
+build/pyinstaller/
+dist/
+
+# Tests / Caches
+.pytest_cache/
+.mypy_cache/
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# Editors
+.vscode/
+.idea/
