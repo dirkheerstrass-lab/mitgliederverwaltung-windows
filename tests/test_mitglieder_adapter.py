@@ -229,5 +229,34 @@ def test_restore_from_backup_lehnt_ungueltiges_zip_ab(temp_data_dir):
         mitglieder.restore_from_backup(b"kein zip")
 
 
+def test_adapter_ueberschreibt_backups_und_zahlungen_dir():
+    """Regressionstest: BACKUPS_DIR/ZAHLUNGEN_DIR müssen explizit auf denselben
+    Root wie DATA_DIR umgebogen werden, da mitglieder.py sie beim eigenen
+    Import unabhängig von DATA_DIR aus seinem eigenen BASE_DIR ableitet."""
+    assert mitglieder.BACKUPS_DIR.parent == mitglieder.DATA_DIR.parent
+    assert mitglieder.ZAHLUNGEN_DIR == mitglieder.DATA_DIR / "zahlungen"
+
+
+def test_adapter_frozen_mode_verankert_an_exe_ordner(monkeypatch):
+    """Regressionstest für den Bug 'Sicherheits-Backups werden nicht
+    angezeigt': im PyInstaller-Onedir-Build muss der Datenordner am Ordner der
+    .exe (sys.executable) hängen, nicht an Path(__file__) von
+    mitglieder_adapter.py - dieser liegt im gebauten Programm in _internal/,
+    nicht neben der .exe."""
+    import importlib
+
+    fake_exe = Path(tempfile.mkdtemp()) / "Mitgliederverwaltung.exe"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_exe))
+    try:
+        importlib.reload(adapter)
+        assert adapter.PROJECT_ROOT == fake_exe.parent
+        assert adapter.mitglieder.BACKUPS_DIR == fake_exe.parent / "backups"
+        assert adapter.mitglieder.DATA_DIR == fake_exe.parent / "data"
+    finally:
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        importlib.reload(adapter)  # Modulzustand für nachfolgende Tests zurücksetzen
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

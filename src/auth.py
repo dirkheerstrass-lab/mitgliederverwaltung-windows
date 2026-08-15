@@ -90,6 +90,12 @@ def login_dialog(parent=None) -> Optional[str]:
     button_row = QHBoxLayout()
     login_button = QPushButton("Login")
     cancel_button = QPushButton("Abbrechen")
+    # autoDefault deaktivieren: sonst würde Enter im Passwortfeld sowohl
+    # returnPressed (unten) als auch einen impliziten Auto-Klick auf diesen
+    # Button auslösen - attempt_login() liefe doppelt, wodurch bei falschem
+    # Passwort die Fehlermeldung zweimal nacheinander erscheint.
+    login_button.setAutoDefault(False)
+    cancel_button.setAutoDefault(False)
     button_row.addWidget(login_button)
     button_row.addWidget(cancel_button)
     layout.addLayout(button_row)

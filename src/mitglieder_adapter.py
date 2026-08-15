@@ -12,7 +12,15 @@ manuell synchron gehalten, da dieses Repo bewusst eigenständig ist.
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if getattr(sys, "frozen", False):
+    # Im PyInstaller-Onedir-Build liegt mitglieder_adapter.py (als Teil des
+    # Programmarchivs) NICHT neben der .exe, sondern in _internal/ -
+    # Path(__file__) darauf zu basieren würde Datenverzeichnisse fälschlich
+    # dorthin verlegen. sys.executable zeigt stattdessen zuverlässig auf die
+    # .exe selbst, deren übergeordneter Ordner der tatsächliche App-Ordner ist.
+    PROJECT_ROOT = Path(sys.executable).resolve().parent
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -20,13 +28,20 @@ if str(PROJECT_ROOT) not in sys.path:
 import mitglieder  # noqa: E402
 import mailer  # noqa: E402
 
-# Lokales Datenverzeichnis im Repo-Root (nicht versioniert, siehe .gitignore)
+# Lokales Datenverzeichnis im App-Ordner (nicht versioniert, siehe .gitignore).
+# Alle Verzeichniskonstanten, die mitglieder.py beim eigenen Import einmalig
+# aus seinem eigenen BASE_DIR ableitet, werden hier explizit auf denselben
+# Root umgebogen - sich nur auf DATA_DIR zu verlassen reicht nicht, da
+# BACKUPS_DIR/ZAHLUNGEN_DIR eigenständige Modulkonstanten sind, die nicht
+# automatisch mit DATA_DIR "mitwandern".
 _DATA_DIR = PROJECT_ROOT / "data"
 mitglieder.DATA_DIR = _DATA_DIR
 mitglieder.CSV_PATH = _DATA_DIR / "mitglieder.csv"
 mitglieder.FOTOS_DIR = _DATA_DIR / "fotos"
 mitglieder.ANHAENGE_DIR = _DATA_DIR / "anhaenge"
 mitglieder.MAIL_LOG_DIR = _DATA_DIR / "mail_log"
+mitglieder.ZAHLUNGEN_DIR = _DATA_DIR / "zahlungen"
+mitglieder.BACKUPS_DIR = PROJECT_ROOT / "backups"
 
 
 class LocalUploadedFile:

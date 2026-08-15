@@ -50,17 +50,23 @@ pyz = PYZ(
     cipher=block_cipher,
 )
 
+# Echtes Onedir: EXE() bekommt bewusst KEINE binaries/datas - die .exe bleibt
+# dadurch ein schlanker Launcher, der seine Abhängigkeiten zur Laufzeit aus
+# dem von COLLECT() erzeugten _internal/-Ordner lädt. Werden binaries/datas
+# zusätzlich hier übergeben (wie zuvor), bündelt PyInstaller sie ein zweites
+# Mal direkt in die .exe - das macht sie unnötig groß und den Start langsamer,
+# obwohl _internal/ ohnehin schon dieselben Dateien lose bereitstellt.
 exe = EXE(
     pyz,
     A.scripts,
-    A.binaries,
-    A.datas,
+    [],
+    [],
     [],
     name='Mitgliederverwaltung',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,  # kein UPX: vermeidet Entpack-Overhead jeder DLL/.pyd beim Start (mehr Speicherplatz statt langsamerem Start)
     console=True,  # Konsolenlog (für CLI-Debugging)
     # icon='resources/icons/app.ico',  # einkommentieren, sobald ein Icon vorhanden ist
     uac_admin=False,
@@ -71,11 +77,16 @@ coll = COLLECT(
     A.binaries,
     A.datas,
     strip=False,
-    upx=True,
+    upx=False,
     name='Mitgliederverwaltung',
     # Abhängigkeiten einbetten: keine
 )
 
-# Hinweis:
+# Hinweise:
 # - Die Datenbank-Datei (members.db) wird im Installationsverzeichnis abgelegt und # von der App gelesen.
 # - .spec sollte am Ende mit `pyinstaller your_spec.spec` erstellt werden
+# - Ergebnis ist bewusst ein "onedir"-Build mit vielen losen Dateien in
+#   dist/Mitgliederverwaltung/_internal/ statt einer möglichst kompakten .exe
+#   (schnellerer Start). Für die Weitergabe an Endnutzer ist ein richtiger
+#   Installer (z. B. Inno Setup/NSIS), der dist/Mitgliederverwaltung/ verpackt,
+#   als spätere Aufgabe vorgesehen (siehe PLAN.md).

@@ -30,6 +30,7 @@ ohne beide Repos neu abzugleichen.
 - [ ] **Excel-Mitgliederimport**: Massenimport im „Neues Mitglied“-Formular der Web-App (`import_members_from_excel`, `build_import_vorlage`)
 - [ ] Weitere PDF-Exporte: Beitrittserklärung, Austrittsbestätigung, Aufnahmeantrag (Letzterer benötigt zusätzlich `vorlagen/aufnahmeantrag_vorlage.pdf` — noch nicht in dieses Repo kopiert)
 - [ ] Server-Synchronisation (Phase 2, `src/sync.py` ist bewusst nur ein Platzhalter)
+- [ ] Richtiger Installer/Setup.exe (z. B. Inno Setup oder NSIS), der den `dist/Mitgliederverwaltung/`-Ordner für Endnutzer verpackt/installiert. Der Build ist bewusst als "onedir" mit vielen losen Dateien in `_internal/` gehalten (schnellerer Start als eine kompakt gepackte `.exe`) — ein Installer soll das später für Endnutzer unsichtbar machen.
 
 ## Hinweis zur Datenschicht
 
