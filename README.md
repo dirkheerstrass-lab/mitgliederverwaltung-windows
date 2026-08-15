@@ -32,6 +32,11 @@ git clone https://github.com/dirkheerstrass-lab/mitgliederverwaltung-windows
 cd mitgliederverwaltung-windows
 ```
 
+> Der lokale Ordnername ist frei wählbar (z. B. `Mitgliederverwaltung_Windows`)
+> — passe den `cd`-Befehl dann entsprechend an. Alle folgenden Befehle in
+> dieser Anleitung werden **im Repo-Root** ausgeführt (dort, wo `src/`,
+> `tests/`, `build/`, `requirements.txt` direkt liegen).
+
 ### 3. Abhängigkeiten installieren
 
 ```powershell
@@ -95,12 +100,43 @@ Passwort und Absenderadresse eines bestehenden E-Mail-Kontos hinterlegen
 
 ## 🛠️ Build der `.exe` (für Verteilung)
 
+PyInstaller ist bereits Teil von `requirements.txt` (Schritt 3 oben) und muss
+nicht separat installiert werden. Im Repo-Root ausführen:
+
 ```powershell
-pip install pyinstaller
 pyinstaller build/pyinstaller.spec --noconfirm
 ```
 
-Erstellt `dist/Mitgliederverwaltung/Mitgliederverwaltung.exe`.
+Der Build dauert wegen PyQt5/pandas typischerweise **einige Minuten**. Das
+Ergebnis liegt danach unter:
+
+```
+dist\Mitgliederverwaltung\Mitgliederverwaltung.exe
+```
+
+Der gesamte Ordner `dist\Mitgliederverwaltung\` (nicht nur die `.exe` allein)
+wird für die Weitergabe/Verteilung benötigt — `_internal\` enthält die
+mitgelieferten Abhängigkeiten (Python-Laufzeit, Qt5, pandas usw.).
+
+**Testen:**
+
+```powershell
+.\dist\Mitgliederverwaltung\Mitgliederverwaltung.exe
+```
+
+**Hinweise:**
+
+- Der erste Start kann spürbar langsamer sein als spätere Starts – meist weil
+  Windows Defender die frisch gebaute, unsignierte `.exe` und die vielen DLLs
+  in `_internal\` beim ersten Zugriff scannt. Das ist normales Verhalten bei
+  PyInstaller-Builds, kein Fehler.
+- `build/pyinstaller.spec` löst alle Pfade relativ zu seinem eigenen
+  Speicherort auf (`SPECPATH`) – der Build funktioniert daher unabhängig
+  davon, aus welchem Verzeichnis `pyinstaller` aufgerufen wird, solange der
+  Pfad zur `.spec`-Datei stimmt.
+- Ein Icon ist aktuell nicht eingebunden (`resources/icons/app.ico` existiert
+  nicht). Sobald eines vorhanden ist, die entsprechende, auskommentierte
+  Zeile in `build/pyinstaller.spec` aktivieren.
 
 ---
 
