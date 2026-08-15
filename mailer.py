@@ -9,6 +9,11 @@ from __future__ import annotations
 import smtplib
 from email.message import EmailMessage
 
+# Kurze Pause zwischen einzelnen Serienmail-Sends, damit auch bei größeren
+# Verteilern (>100 Empfänger) keine Rate-Limits des E-Mail-Anbieters greifen
+# (z. B. Gmail begrenzt Sends pro Minute zusätzlich zum Tageslimit).
+SERIENMAIL_PAUSE_SEKUNDEN = 0.5
+
 
 class SmtpNichtKonfiguriert(Exception):
     """Wird ausgelöst, wenn der [smtp]-Block in secrets.toml fehlt oder unvollständig ist."""
@@ -28,6 +33,21 @@ def smtp_konfiguration(secrets) -> dict:
             f"[smtp]-Block unvollständig, es fehlen: {', '.join(fehlend)}."
         )
     return dict(smtp)
+
+
+def kassierer_email(smtp_config: dict) -> str:
+    """Liest die E-Mail-Adresse des Kassierers für die Sammel-Benachrichtigung
+    bei fälligen Beiträgen aus einem bereits über smtp_konfiguration() geprüften
+    Config-Dict (Feld 'kassierer_email'). Wirft SmtpNichtKonfiguriert, wenn sie
+    fehlt - separat vom allgemeinen smtp_konfiguration()-Check, da dieses Feld
+    nur für die Beitragsmahnung-Ansicht benötigt wird, nicht für den normalen
+    Serienmail-Versand."""
+    if not smtp_config.get("kassierer_email"):
+        raise SmtpNichtKonfiguriert(
+            "Kein 'kassierer_email' im [smtp]-Block von .streamlit/secrets.toml gefunden. "
+            "Siehe .streamlit/secrets.toml.example."
+        )
+    return smtp_config["kassierer_email"]
 
 
 def send_mail(
@@ -54,7 +74,16 @@ def send_mail(
 
     host = smtp_config["host"]
     port = int(smtp_config["port"])
-    with smtplib.SMTP(host, port, timeout=30) as server:
-        server.starttls()
-        server.login(smtp_config["user"], smtp_config["passwort"])
-        server.send_message(nachricht)
+    # Port 465 ist bei den meisten Anbietern "implizites SSL" (SMTPS) - die
+    # Verbindung muss von Anfang an verschlüsselt sein, ein nachträgliches
+    # starttls() wie bei Port 587 schlägt dort fehl. Alle anderen Ports
+    # (587, 25, ...) laufen wie bisher über STARTTLS.
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=30) as server:
+            server.login(smtp_config["user"], smtp_config["passwort"])
+            server.send_message(nachricht)
+    else:
+        with smtplib.SMTP(host, port, timeout=30) as server:
+            server.starttls()
+            server.login(smtp_config["user"], smtp_config["passwort"])
+            server.send_message(nachricht)

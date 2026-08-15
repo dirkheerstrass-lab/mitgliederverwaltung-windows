@@ -21,11 +21,13 @@ from mitglieder_adapter import mitglieder, LocalUploadedFile  # noqa: E402
 @pytest.fixture
 def temp_data_dir(monkeypatch, tmp_path):
     """Leitet mitglieder.DATA_DIR etc. auf ein temporäres Verzeichnis um."""
-    monkeypatch.setattr(mitglieder, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(mitglieder, "CSV_PATH", tmp_path / "mitglieder.csv")
-    monkeypatch.setattr(mitglieder, "FOTOS_DIR", tmp_path / "fotos")
-    monkeypatch.setattr(mitglieder, "ANHAENGE_DIR", tmp_path / "anhaenge")
-    monkeypatch.setattr(mitglieder, "MAIL_LOG_DIR", tmp_path / "mail_log")
+    monkeypatch.setattr(mitglieder, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(mitglieder, "CSV_PATH", tmp_path / "data" / "mitglieder.csv")
+    monkeypatch.setattr(mitglieder, "FOTOS_DIR", tmp_path / "data" / "fotos")
+    monkeypatch.setattr(mitglieder, "ANHAENGE_DIR", tmp_path / "data" / "anhaenge")
+    monkeypatch.setattr(mitglieder, "MAIL_LOG_DIR", tmp_path / "data" / "mail_log")
+    monkeypatch.setattr(mitglieder, "ZAHLUNGEN_DIR", tmp_path / "data" / "zahlungen")
+    monkeypatch.setattr(mitglieder, "BACKUPS_DIR", tmp_path / "backups")
     return tmp_path
 
 
@@ -46,7 +48,7 @@ def test_load_data_erstellt_leere_csv(temp_data_dir):
     df = mitglieder.load_data()
     assert list(df.columns) == mitglieder.COLUMNS
     assert len(df) == 0
-    assert (temp_data_dir / "mitglieder.csv").exists()
+    assert (temp_data_dir / "data" / "mitglieder.csv").exists()
 
 
 def test_add_and_load_member(temp_data_dir):
@@ -145,6 +147,86 @@ def test_export_excel_und_pdf_erzeugen_bytes(temp_data_dir):
 
     assert isinstance(excel_bytes, (bytes, bytearray)) and len(excel_bytes) > 0
     assert isinstance(pdf_bytes, (bytes, bytearray)) and len(pdf_bytes) > 0
+
+
+def test_is_valid_iban():
+    assert mitglieder.is_valid_iban("DE89 3704 0044 0532 0130 00") is True
+    assert mitglieder.is_valid_iban("DE00000000000000000000") is False
+    assert mitglieder.is_valid_iban("") is False
+
+
+def test_validate_member_normalisiert_gueltige_iban(temp_data_dir):
+    df = mitglieder.load_data()
+    daten = _beispiel_daten(IBAN="de89 3704 0044 0532 0130 00")
+    fehler = mitglieder.validate_member(daten, df)
+    assert fehler == []
+    assert daten["IBAN"] == "DE89370400440532013000"
+
+
+def test_validate_member_lehnt_ungueltige_iban_ab(temp_data_dir):
+    df = mitglieder.load_data()
+    daten = _beispiel_daten(IBAN="DE00000000000000000000")
+    fehler = mitglieder.validate_member(daten, df)
+    assert any("IBAN" in f for f in fehler)
+
+
+def test_log_und_list_zahlungen(temp_data_dir):
+    mitglieder.log_zahlung("mitglied-1", "15.0", "2024-01-01", "Überweisung", "Testnotiz")
+    verlauf = mitglieder.list_zahlungen("mitglied-1")
+    assert len(verlauf) == 1
+    assert verlauf[0]["betrag"] == "15.0"
+    assert verlauf[0]["zahlungsart"] == "Überweisung"
+    assert verlauf[0]["notiz"] == "Testnotiz"
+
+
+def test_faellige_mitglieder_erkennt_ueberfaellige_zahlung(temp_data_dir):
+    df = mitglieder.load_data()
+    neuer_df = mitglieder.add_member(df, _beispiel_daten(
+        Letzte_Zahlung="2020-01-01", Zahlungsrhythmus="monatlich", Beitragsbetrag="15.0",
+    ))
+    mitglieder.save_data(neuer_df)
+
+    faellig = mitglieder.faellige_mitglieder(mitglieder.load_data())
+    assert len(faellig) == 1
+    assert faellig.iloc[0]["Faelligkeitsdatum"]
+
+    text = mitglieder.build_kassierer_beitragsuebersicht(faellig)
+    assert "Erika" in text
+
+
+def test_build_sepa_mandat_pdf_erzeugt_bytes(temp_data_dir):
+    df = mitglieder.load_data()
+    neuer_df = mitglieder.add_member(df, _beispiel_daten(IBAN="DE89370400440532013000"))
+    mitglieder.save_data(neuer_df)
+
+    pdf_bytes = mitglieder.build_sepa_mandat_pdf(neuer_df.iloc[0])
+    assert isinstance(pdf_bytes, (bytes, bytearray)) and len(pdf_bytes) > 0
+
+
+def test_backup_und_restore_roundtrip(temp_data_dir):
+    df = mitglieder.load_data()
+    neuer_df = mitglieder.add_member(df, _beispiel_daten())
+    mitglieder.save_data(neuer_df)
+
+    backup_bytes = mitglieder.build_backup_zip()
+    assert len(backup_bytes) > 0
+
+    aktualisiert = mitglieder.delete_member(mitglieder.load_data(), neuer_df.iloc[0]["ID"])
+    mitglieder.save_data(aktualisiert)
+    assert len(mitglieder.load_data()) == 0
+
+    mitglieder.restore_from_backup(backup_bytes)
+    geladen = mitglieder.load_data()
+    assert len(geladen) == 1
+    assert geladen.iloc[0]["Vorname"] == "Erika"
+
+    sicherheitsbackups = mitglieder.list_sicherheits_backups()
+    assert len(sicherheitsbackups) == 1
+
+
+def test_restore_from_backup_lehnt_ungueltiges_zip_ab(temp_data_dir):
+    with pytest.raises(mitglieder.UngueltigesBackup):
+        mitglieder.restore_from_backup(b"kein zip")
 
 
 if __name__ == "__main__":

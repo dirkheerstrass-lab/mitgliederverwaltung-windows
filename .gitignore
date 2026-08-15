@@ -1,6 +1,9 @@
 # Mitgliederdaten (CSV, Fotos, Anhänge enthalten echte Personendaten)
 data/
 
+# Automatische Sicherheits-Backups vor Restore-Vorgängen (enthalten dieselben Personendaten)
+backups/
+
 # Byte-compiled / optimized files
 __pycache__/
 *.py[cod]

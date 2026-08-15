@@ -12,6 +12,7 @@ Aufbau (analog zu den drei Ansichten der Web-App):
 - Serienmail: Mehrfachauswahl + Versand über SMTP
 """
 
+import time
 from pathlib import Path
 from datetime import date
 
@@ -40,11 +41,13 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QScrollArea,
     QSplitter,
+    QTabWidget,
     QDialog,
     QDialogButtonBox,
     QMessageBox,
     QFileDialog,
     QAbstractItemView,
+    QInputDialog,
 )
 
 import mitglieder_adapter as adapter
@@ -109,22 +112,34 @@ class OptionalDateEdit(QWidget):
 # Gemeinsames Formular (genutzt von "Neues Mitglied" und dem Bearbeiten-Dialog)
 # ---------------------------------------------------------------------------
 class MemberFormWidget(QWidget):
-    """Enthält alle Mitgliedsfelder aus mitglieder.COLUMNS außer der ID."""
+    """Enthält alle Mitgliedsfelder aus mitglieder.COLUMNS außer der ID,
+    gegliedert in 3 Tabs analog zur Web-App: Persönliche Daten,
+    Gruppen & Mitgliedschaft, Konto & SEPA."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs)
+
+        self.tabs.addTab(self._build_persoenliche_daten_tab(), "Persönliche Daten")
+        self.tabs.addTab(self._build_gruppen_tab(), "Gruppen && Mitgliedschaft")
+        self.tabs.addTab(self._build_konto_sepa_tab(), "Konto && SEPA")
+
+    # -----------------------------------------------------------------------
+    def _build_persoenliche_daten_tab(self) -> QWidget:
+        tab = QWidget()
+        outer = QVBoxLayout(tab)
+
         grid = QGridLayout()
         outer.addLayout(grid)
 
-        # --- Spalte 1: Stammdaten ---
         col1 = QFormLayout()
         self.anrede = QComboBox()
         self.anrede.addItems(mitglieder.ANREDE_OPTIONEN)
         col1.addRow("Anrede:", self.anrede)
-
         self.vorname = QLineEdit()
         col1.addRow("Vorname *:", self.vorname)
         self.nachname = QLineEdit()
@@ -137,7 +152,6 @@ class MemberFormWidget(QWidget):
         col1.addRow("Mitgliedsnummer:", self.mitgliedsnummer)
         grid.addLayout(col1, 0, 0)
 
-        # --- Spalte 2: Adresse + Daten ---
         col2 = QFormLayout()
         self.strasse = QLineEdit()
         col2.addRow("Straße:", self.strasse)
@@ -145,56 +159,10 @@ class MemberFormWidget(QWidget):
         col2.addRow("PLZ:", self.plz)
         self.stadt = QLineEdit()
         col2.addRow("Stadt:", self.stadt)
-
         self.geburtstag = OptionalDateEdit()
         col2.addRow("Geburtstag:", self.geburtstag)
-
-        self.eintrittsdatum = QDateEdit()
-        self.eintrittsdatum.setCalendarPopup(True)
-        self.eintrittsdatum.setDisplayFormat("dd.MM.yyyy")
-        self.eintrittsdatum.setMinimumDate(QDate(1900, 1, 1))
-        self.eintrittsdatum.setMaximumDate(QDate(2100, 12, 31))
-        self.eintrittsdatum.setDate(QDate.currentDate())
-        col2.addRow("Eintrittsdatum *:", self.eintrittsdatum)
-
-        self.austrittsdatum = OptionalDateEdit()
-        col2.addRow("Austrittsdatum:", self.austrittsdatum)
         grid.addLayout(col2, 0, 1)
 
-        # --- Status / Gruppen / Funktion ---
-        status_box = QGroupBox("Status & Gruppen")
-        status_layout = QFormLayout(status_box)
-        self.status = QComboBox()
-        self.status.addItems(mitglieder.STATUS_OPTIONEN)
-        status_layout.addRow("Mitgliedsstatus *:", self.status)
-
-        self.gruppen_list = QListWidget()
-        self.gruppen_list.setSelectionMode(QAbstractItemView.NoSelection)
-        for gruppe in mitglieder.GRUPPEN_OPTIONEN:
-            item = QListWidgetItem(gruppe)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Unchecked)
-            self.gruppen_list.addItem(item)
-        self.gruppen_list.setMaximumHeight(120)
-        status_layout.addRow("Gruppen:", self.gruppen_list)
-
-        self.funktion = QLineEdit()
-        status_layout.addRow("Funktion im Verein:", self.funktion)
-        outer.addWidget(status_box)
-
-        # --- Vereinsnummern ---
-        nummern_box = QGroupBox("Weitere Nummern")
-        nummern_layout = QHBoxLayout(nummern_box)
-        self.dkv = QLineEdit()
-        self.nwdv = QLineEdit()
-        self.gameshot = QLineEdit()
-        for label, widget in [("DKV-Nummer:", self.dkv), ("NWDV-Nummer:", self.nwdv), ("Game-Shot-Nummer:", self.gameshot)]:
-            sub = QFormLayout()
-            sub.addRow(label, widget)
-            nummern_layout.addLayout(sub)
-        outer.addWidget(nummern_box)
-
-        # --- Einwilligung ---
         einwilligung_box = QGroupBox("Einwilligung")
         einwilligung_layout = QHBoxLayout(einwilligung_box)
         self.einwilligung = QCheckBox("Einwilligung zur Foto-/Datenspeicherung liegt vor")
@@ -204,7 +172,6 @@ class MemberFormWidget(QWidget):
         einwilligung_layout.addWidget(self.einwilligung_datum)
         outer.addWidget(einwilligung_box)
 
-        # --- Gesetzlicher Vertreter ---
         vertreter_box = QGroupBox("Angaben zum gesetzlichen Vertreter (falls minderjährig)")
         vertreter_layout = QFormLayout(vertreter_box)
         self.vertreter_name = QLineEdit()
@@ -215,13 +182,66 @@ class MemberFormWidget(QWidget):
         vertreter_layout.addRow("E-Mail:", self.vertreter_email)
         outer.addWidget(vertreter_box)
 
-        # --- Notizen ---
         outer.addWidget(QLabel("Notizen:"))
         self.notizen = QTextEdit()
         self.notizen.setMaximumHeight(80)
         outer.addWidget(self.notizen)
+        outer.addStretch(1)
+        return tab
 
-        # --- Beitragsverwaltung ---
+    # -----------------------------------------------------------------------
+    def _build_gruppen_tab(self) -> QWidget:
+        tab = QWidget()
+        outer = QVBoxLayout(tab)
+
+        mitgliedschaft_box = QGroupBox("Mitgliedschaft")
+        mitgliedschaft_layout = QFormLayout(mitgliedschaft_box)
+        self.eintrittsdatum = QDateEdit()
+        self.eintrittsdatum.setCalendarPopup(True)
+        self.eintrittsdatum.setDisplayFormat("dd.MM.yyyy")
+        self.eintrittsdatum.setMinimumDate(QDate(1900, 1, 1))
+        self.eintrittsdatum.setMaximumDate(QDate(2100, 12, 31))
+        self.eintrittsdatum.setDate(QDate.currentDate())
+        mitgliedschaft_layout.addRow("Eintrittsdatum *:", self.eintrittsdatum)
+        self.austrittsdatum = OptionalDateEdit()
+        mitgliedschaft_layout.addRow("Austrittsdatum:", self.austrittsdatum)
+        self.status = QComboBox()
+        self.status.addItems(mitglieder.STATUS_OPTIONEN)
+        mitgliedschaft_layout.addRow("Mitgliedsstatus *:", self.status)
+        outer.addWidget(mitgliedschaft_box)
+
+        status_box = QGroupBox("Gruppen")
+        status_layout = QVBoxLayout(status_box)
+        self.gruppen_list = QListWidget()
+        self.gruppen_list.setSelectionMode(QAbstractItemView.NoSelection)
+        for gruppe in mitglieder.GRUPPEN_OPTIONEN:
+            item = QListWidgetItem(gruppe)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Unchecked)
+            self.gruppen_list.addItem(item)
+        self.gruppen_list.setMaximumHeight(120)
+        status_layout.addWidget(self.gruppen_list)
+        outer.addWidget(status_box)
+
+        nummern_box = QGroupBox("Funktion & weitere Nummern")
+        nummern_layout = QFormLayout(nummern_box)
+        self.funktion = QLineEdit()
+        nummern_layout.addRow("Funktion im Verein:", self.funktion)
+        self.dkv = QLineEdit()
+        nummern_layout.addRow("DKV-Nummer:", self.dkv)
+        self.nwdv = QLineEdit()
+        nummern_layout.addRow("NWDV-Nummer:", self.nwdv)
+        self.gameshot = QLineEdit()
+        nummern_layout.addRow("Game-Shot-Nummer:", self.gameshot)
+        outer.addWidget(nummern_box)
+        outer.addStretch(1)
+        return tab
+
+    # -----------------------------------------------------------------------
+    def _build_konto_sepa_tab(self) -> QWidget:
+        tab = QWidget()
+        outer = QVBoxLayout(tab)
+
         beitrag_box = QGroupBox("Beitragsverwaltung")
         beitrag_layout = QFormLayout(beitrag_box)
         self.zahlungsrhythmus = QComboBox()
@@ -241,6 +261,22 @@ class MemberFormWidget(QWidget):
         self.letzte_zahlung.empty_check.toggled.connect(self._update_naechste_faellig)
         self.zahlungsrhythmus.currentTextChanged.connect(self._update_naechste_faellig)
         outer.addWidget(beitrag_box)
+
+        sepa_box = QGroupBox("SEPA-Mandat")
+        sepa_layout = QFormLayout(sepa_box)
+        self.iban = QLineEdit()
+        self.iban.setPlaceholderText("z. B. DE89 3704 0044 0532 0130 00")
+        sepa_layout.addRow("IBAN:", self.iban)
+        self.kontoinhaber = QLineEdit()
+        self.kontoinhaber.setPlaceholderText("Falls abweichend vom Mitgliedsnamen")
+        sepa_layout.addRow("Kontoinhaber:", self.kontoinhaber)
+        self.sepa_referenz = QLineEdit()
+        sepa_layout.addRow("Mandatsreferenz:", self.sepa_referenz)
+        self.sepa_datum = OptionalDateEdit()
+        sepa_layout.addRow("Mandatsdatum:", self.sepa_datum)
+        outer.addWidget(sepa_box)
+        outer.addStretch(1)
+        return tab
 
     def _update_naechste_faellig(self, *_args):
         naechste = mitglieder.compute_next_due(self.letzte_zahlung.get_iso(), self.zahlungsrhythmus.currentText())
@@ -285,6 +321,10 @@ class MemberFormWidget(QWidget):
             "Zahlungsrhythmus": self.zahlungsrhythmus.currentText(),
             "Beitragsbetrag": str(self.beitragsbetrag.value()),
             "Letzte_Zahlung": self.letzte_zahlung.get_iso(),
+            "IBAN": self.iban.text().strip(),
+            "Kontoinhaber": self.kontoinhaber.text().strip(),
+            "SEPA_Mandatsreferenz": self.sepa_referenz.text().strip(),
+            "SEPA_Mandatsdatum": self.sepa_datum.get_iso(),
         }
 
     # -- Formular mit vorhandenen Werten vorbelegen (Bearbeiten-Modus) --
@@ -329,6 +369,10 @@ class MemberFormWidget(QWidget):
         except (TypeError, ValueError):
             self.beitragsbetrag.setValue(0)
         self.letzte_zahlung.set_iso(member.get("Letzte_Zahlung", ""))
+        self.iban.setText(member.get("IBAN", ""))
+        self.kontoinhaber.setText(member.get("Kontoinhaber", ""))
+        self.sepa_referenz.setText(member.get("SEPA_Mandatsreferenz", ""))
+        self.sepa_datum.set_iso(member.get("SEPA_Mandatsdatum", ""))
         self._update_naechste_faellig()
 
 
@@ -402,6 +446,43 @@ class MemberEditDialog(QDialog):
         content_layout.addWidget(mail_box)
         self._mail_log_aktualisieren()
 
+        # --- Zahlung erfassen ---
+        zahlung_box = QGroupBox("Zahlung erfassen")
+        zahlung_layout = QVBoxLayout(zahlung_box)
+        zahlung_form = QFormLayout()
+        self.zahlung_datum = QDateEdit()
+        self.zahlung_datum.setCalendarPopup(True)
+        self.zahlung_datum.setDisplayFormat("dd.MM.yyyy")
+        self.zahlung_datum.setMinimumDate(QDate(1900, 1, 1))
+        self.zahlung_datum.setMaximumDate(QDate(2100, 12, 31))
+        self.zahlung_datum.setDate(QDate.currentDate())
+        zahlung_form.addRow("Datum:", self.zahlung_datum)
+        self.zahlung_betrag = QDoubleSpinBox()
+        self.zahlung_betrag.setRange(0, 100000)
+        self.zahlung_betrag.setDecimals(2)
+        self.zahlung_betrag.setSingleStep(0.5)
+        self.zahlung_betrag.setSuffix(" €")
+        try:
+            self.zahlung_betrag.setValue(float(member.get("Beitragsbetrag") or 0))
+        except (TypeError, ValueError):
+            pass
+        zahlung_form.addRow("Betrag:", self.zahlung_betrag)
+        self.zahlung_art = QComboBox()
+        self.zahlung_art.addItems(mitglieder.ZAHLUNGSART_OPTIONEN)
+        zahlung_form.addRow("Zahlungsart:", self.zahlung_art)
+        self.zahlung_notiz = QLineEdit()
+        zahlung_form.addRow("Notiz (optional):", self.zahlung_notiz)
+        zahlung_layout.addLayout(zahlung_form)
+        self.zahlung_erfassen_btn = QPushButton("Zahlung erfassen")
+        self.zahlung_erfassen_btn.clicked.connect(self._zahlung_erfassen)
+        zahlung_layout.addWidget(self.zahlung_erfassen_btn)
+
+        self.zahlungsverlauf_list = QListWidget()
+        zahlung_layout.addWidget(QLabel("Zahlungsverlauf:"))
+        zahlung_layout.addWidget(self.zahlungsverlauf_list)
+        content_layout.addWidget(zahlung_box)
+        self._zahlungsverlauf_aktualisieren()
+
         # --- Exporte ---
         export_box = QGroupBox("Export")
         export_layout = QHBoxLayout(export_box)
@@ -409,8 +490,11 @@ class MemberEditDialog(QDialog):
         self.vcard_btn.clicked.connect(self._vcard_exportieren)
         self.ausweis_btn = QPushButton("🪪 Mitgliedsausweis (PDF)")
         self.ausweis_btn.clicked.connect(self._ausweis_exportieren)
+        self.sepa_btn = QPushButton("🏦 SEPA-Mandat (PDF)")
+        self.sepa_btn.clicked.connect(self._sepa_mandat_exportieren)
         export_layout.addWidget(self.vcard_btn)
         export_layout.addWidget(self.ausweis_btn)
+        export_layout.addWidget(self.sepa_btn)
         content_layout.addWidget(export_box)
 
         # --- Löschen ---
@@ -504,6 +588,46 @@ class MemberEditDialog(QDialog):
                 text += f" (Fehler: {eintrag['fehler']})"
             self.mail_list.addItem(text)
 
+    def _zahlungsverlauf_aktualisieren(self):
+        self.zahlungsverlauf_list.clear()
+        eintraege = mitglieder.list_zahlungen(self.mitglied_id)
+        if not eintraege:
+            self.zahlungsverlauf_list.addItem("Noch keine Zahlung erfasst.")
+            return
+        for eintrag in eintraege:
+            text = (
+                f"{eintrag.get('datum', '')} — {eintrag.get('betrag', '')} € "
+                f"({eintrag.get('zahlungsart', '')})"
+            )
+            if eintrag.get("notiz"):
+                text += f" — {eintrag['notiz']}"
+            self.zahlungsverlauf_list.addItem(text)
+
+    def _zahlung_erfassen(self):
+        if self.zahlung_betrag.value() <= 0:
+            QMessageBox.warning(self, "Eingabefehler", "Bitte einen Betrag größer als 0 € eingeben.")
+            return
+        datum_iso = _qdate_to_iso(self.zahlung_datum.date())
+        mitglieder.log_zahlung(
+            self.mitglied_id,
+            str(self.zahlung_betrag.value()),
+            datum_iso,
+            self.zahlung_art.currentText(),
+            self.zahlung_notiz.text().strip(),
+        )
+        # Nur Letzte_Zahlung wird aktualisiert (verschiebt die nächste
+        # Fälligkeit) - der laufende Beitragsbetrag bleibt unangetastet, auch
+        # wenn eine Zahlung z. B. wegen einer Nachzahlung/Teilzahlung von
+        # diesem Betrag abweicht. Der tatsächlich gezahlte Betrag steht im
+        # Zahlungsverlauf.
+        df = mitglieder.load_data()
+        aktualisiert = mitglieder.update_member(df, self.mitglied_id, {"Letzte_Zahlung": datum_iso})
+        mitglieder.save_data(aktualisiert)
+        self.zahlung_notiz.clear()
+        self.form.letzte_zahlung.set_iso(datum_iso)
+        self._zahlungsverlauf_aktualisieren()
+        QMessageBox.information(self, "Erfolg", "Zahlung wurde erfasst.")
+
     def _vcard_exportieren(self):
         member = self._current_member()
         if member is None:
@@ -514,6 +638,18 @@ class MemberEditDialog(QDialog):
         if ziel:
             Path(ziel).write_text(mitglieder.build_vcard(member), encoding="utf-8")
             QMessageBox.information(self, "Erfolg", "vCard wurde gespeichert.")
+
+    def _sepa_mandat_exportieren(self):
+        member = self._current_member()
+        if member is None:
+            return
+        ziel, _ = QFileDialog.getSaveFileName(
+            self, "SEPA-Mandat speichern",
+            f"sepa_mandat_{member['Vorname']}_{member['Nachname']}.pdf", "PDF (*.pdf)",
+        )
+        if ziel:
+            Path(ziel).write_bytes(mitglieder.build_sepa_mandat_pdf(member))
+            QMessageBox.information(self, "Erfolg", "SEPA-Mandat wurde gespeichert.")
 
     def _ausweis_exportieren(self):
         member = self._current_member()
@@ -817,6 +953,40 @@ class NeuesMitgliedPage(QWidget):
 # ---------------------------------------------------------------------------
 # Serienmail
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Gemeinsamer Versand-Loop (Serienmail + Beitragsmahnung nutzen denselben Ablauf)
+# ---------------------------------------------------------------------------
+def _versende_serienmails(smtp_config: dict, ids: list[str], df, betreff_vorlage: str, text_vorlage: str, pdf_anhaengen: bool) -> tuple[int, list[str]]:
+    """Verschickt an jede der übergebenen Mitglieds-IDs eine personalisierte
+    Mail, loggt jeden Versand (mitglieder.log_mail) und pausiert zwischen den
+    Sends (mailer.SERIENMAIL_PAUSE_SEKUNDEN), damit Anbieter-Rate-Limits nicht
+    greifen. Gibt (Anzahl erfolgreich, Liste Fehlermeldungen) zurück."""
+    erfolgreich = 0
+    fehlgeschlagen = []
+    for mitglied_id in ids:
+        treffer = df[df["ID"] == mitglied_id]
+        if treffer.empty:
+            continue
+        member = treffer.iloc[0]
+        empfaenger = member.get("E-Mail", "")
+        betreff = mitglieder.fuelle_platzhalter(betreff_vorlage, member)
+        text = mitglieder.fuelle_platzhalter(text_vorlage, member)
+        try:
+            if not empfaenger:
+                raise ValueError("Keine E-Mail-Adresse hinterlegt.")
+            anhang_bytes = None
+            if pdf_anhaengen:
+                anhang_bytes = mitglieder.build_serienbrief_pdf(member, betreff, text)
+            mailer.send_mail(smtp_config, empfaenger, betreff, text, anhang_bytes=anhang_bytes, anhang_dateiname="anschreiben.pdf")
+            mitglieder.log_mail(mitglied_id, betreff, empfaenger, erfolgreich=True)
+            erfolgreich += 1
+        except Exception as exc:
+            mitglieder.log_mail(mitglied_id, betreff, empfaenger, erfolgreich=False, fehler=str(exc))
+            fehlgeschlagen.append(f"{member['Vorname']} {member['Nachname']}: {exc}")
+        time.sleep(mailer.SERIENMAIL_PAUSE_SEKUNDEN)
+    return erfolgreich, fehlgeschlagen
+
+
 class SerienmailPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
@@ -914,27 +1084,9 @@ class SerienmailPage(QWidget):
             return
 
         df = mitglieder.load_data()
-        erfolgreich, fehlgeschlagen = 0, []
-        for mitglied_id in ausgewaehlte_ids:
-            treffer = df[df["ID"] == mitglied_id]
-            if treffer.empty:
-                continue
-            member = treffer.iloc[0]
-            empfaenger = member.get("E-Mail", "")
-            betreff = mitglieder.fuelle_platzhalter(betreff_vorlage, member)
-            text = mitglieder.fuelle_platzhalter(text_vorlage, member)
-            try:
-                if not empfaenger:
-                    raise ValueError("Keine E-Mail-Adresse hinterlegt.")
-                anhang_bytes = None
-                if self.pdf_anhaengen_check.isChecked():
-                    anhang_bytes = mitglieder.build_serienbrief_pdf(member, betreff, text)
-                mailer.send_mail(smtp_config, empfaenger, betreff, text, anhang_bytes=anhang_bytes, anhang_dateiname="anschreiben.pdf")
-                mitglieder.log_mail(mitglied_id, betreff, empfaenger, erfolgreich=True)
-                erfolgreich += 1
-            except Exception as exc:
-                mitglieder.log_mail(mitglied_id, betreff, empfaenger, erfolgreich=False, fehler=str(exc))
-                fehlgeschlagen.append(f"{member['Vorname']} {member['Nachname']}: {exc}")
+        erfolgreich, fehlgeschlagen = _versende_serienmails(
+            smtp_config, ausgewaehlte_ids, df, betreff_vorlage, text_vorlage, self.pdf_anhaengen_check.isChecked()
+        )
 
         meldung = []
         if erfolgreich:
@@ -957,12 +1109,14 @@ class SmtpSettingsDialog(QDialog):
         self.passwort_edit = QLineEdit(config.get("passwort", ""))
         self.passwort_edit.setEchoMode(QLineEdit.Password)
         self.absender_edit = QLineEdit(config.get("absender", ""))
+        self.kassierer_edit = QLineEdit(config.get("kassierer_email", ""))
 
         layout.addRow("Host:", self.host_edit)
         layout.addRow("Port:", self.port_edit)
         layout.addRow("Benutzer:", self.user_edit)
         layout.addRow("Passwort:", self.passwort_edit)
         layout.addRow("Absender:", self.absender_edit)
+        layout.addRow("Kassierer-E-Mail (für Beitragsmahnung):", self.kassierer_edit)
 
         button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self._speichern)
@@ -976,8 +1130,275 @@ class SmtpSettingsDialog(QDialog):
             "user": self.user_edit.text().strip(),
             "passwort": self.passwort_edit.text(),
             "absender": self.absender_edit.text().strip(),
+            "kassierer_email": self.kassierer_edit.text().strip(),
         })
         self.accept()
+
+
+# ---------------------------------------------------------------------------
+# Beitragsmahnung
+# ---------------------------------------------------------------------------
+class BeitragsmahnungPage(QWidget):
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        layout = QVBoxLayout(self)
+
+        info = QLabel(
+            "Zeigt alle Mitglieder, deren nächste Beitragsfälligkeit (berechnet "
+            "aus letzter Zahlung + Zahlungsrhythmus) erreicht oder überschritten "
+            "ist. Platzhalter wie {Vorname}, {Beitragsbetrag}, "
+            "{Faelligkeitsdatum} werden je Mitglied ersetzt."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        btn_row = QHBoxLayout()
+        smtp_btn = QPushButton("SMTP-Einstellungen...")
+        smtp_btn.clicked.connect(self._smtp_einstellungen)
+        btn_row.addWidget(smtp_btn)
+        self.kassierer_btn = QPushButton("Kassierer benachrichtigen")
+        self.kassierer_btn.clicked.connect(self._kassierer_benachrichtigen)
+        btn_row.addWidget(self.kassierer_btn)
+        btn_row.addStretch(1)
+        layout.addLayout(btn_row)
+
+        anzeige_spalten = [c for c in COLUMNS if c != "ID"] + ["Faelligkeitsdatum"]
+        self.anzeige_spalten = anzeige_spalten
+        self.table = QTableWidget()
+        self.table.setColumnCount(len(anzeige_spalten))
+        self.table.setHorizontalHeaderLabels(anzeige_spalten)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        layout.addWidget(self.table, stretch=1)
+
+        self.auswahl_label = QLabel("0 Mitglied(er) ausgewählt.")
+        self.table.itemSelectionChanged.connect(self._auswahl_aktualisieren)
+        layout.addWidget(self.auswahl_label)
+
+        form_box = QGroupBox("Beitragsmahnung")
+        form_layout = QFormLayout(form_box)
+        self.betreff_edit = QLineEdit("Erinnerung: Mitgliedsbeitrag fällig")
+        form_layout.addRow("Betreff:", self.betreff_edit)
+        self.text_edit = QTextEdit()
+        self.text_edit.setPlainText(
+            "Hallo {Vorname},\n\n"
+            "dein Mitgliedsbeitrag in Höhe von {Beitragsbetrag} € war am "
+            "{Faelligkeitsdatum} fällig. Bitte überweise den Betrag zeitnah.\n\n"
+            "Vielen Dank!"
+        )
+        self.text_edit.setMinimumHeight(150)
+        form_layout.addRow("Text:", self.text_edit)
+        self.pdf_anhaengen_check = QCheckBox("Text zusätzlich als PDF anhängen")
+        form_layout.addRow(self.pdf_anhaengen_check)
+        layout.addWidget(form_box)
+
+        self.versenden_btn = QPushButton("Beitragsmahnung versenden")
+        self.versenden_btn.clicked.connect(self._versenden)
+        layout.addWidget(self.versenden_btn)
+
+    def _faellig_df(self):
+        return mitglieder.faellige_mitglieder(mitglieder.load_data())
+
+    def refresh_table(self):
+        faellig_df = self._faellig_df()
+        self.table.setRowCount(len(faellig_df))
+        for row, (_, member) in enumerate(faellig_df.iterrows()):
+            for col, spalte in enumerate(self.anzeige_spalten):
+                self.table.setItem(row, col, QTableWidgetItem(str(member.get(spalte, ""))))
+        self.table.resizeColumnsToContents()
+
+    def _auswahl_aktualisieren(self):
+        anzahl = len(self.table.selectionModel().selectedRows())
+        self.auswahl_label.setText(f"{anzahl} Mitglied(er) ausgewählt.")
+
+    def _selected_member_ids(self) -> list[str]:
+        faellig_df = self._faellig_df()
+        vorname_idx = self.anzeige_spalten.index("Vorname")
+        nachname_idx = self.anzeige_spalten.index("Nachname")
+        nummer_idx = self.anzeige_spalten.index("Mitgliedsnummer")
+        ids = []
+        for index in self.table.selectionModel().selectedRows():
+            row = index.row()
+            vorname = self.table.item(row, vorname_idx).text()
+            nachname = self.table.item(row, nachname_idx).text()
+            nummer = self.table.item(row, nummer_idx).text()
+            treffer = faellig_df[
+                (faellig_df["Vorname"] == vorname)
+                & (faellig_df["Nachname"] == nachname)
+                & (faellig_df["Mitgliedsnummer"] == nummer)
+            ]
+            if not treffer.empty:
+                ids.append(treffer.iloc[0]["ID"])
+        return ids
+
+    def _smtp_einstellungen(self):
+        dlg = SmtpSettingsDialog(self)
+        dlg.exec_()
+
+    def _versenden(self):
+        ausgewaehlte_ids = self._selected_member_ids()
+        betreff_vorlage = self.betreff_edit.text()
+        text_vorlage = self.text_edit.toPlainText()
+
+        if not ausgewaehlte_ids:
+            QMessageBox.warning(self, "Fehler", "Bitte mindestens ein Mitglied auswählen.")
+            return
+        if not betreff_vorlage.strip() or not text_vorlage.strip():
+            QMessageBox.warning(self, "Fehler", "Betreff und Text dürfen nicht leer sein.")
+            return
+
+        try:
+            smtp_config = mailer.smtp_konfiguration(adapter.smtp_secrets_wrapper())
+        except mailer.SmtpNichtKonfiguriert as exc:
+            QMessageBox.critical(self, "SMTP nicht konfiguriert", str(exc))
+            return
+
+        faellig_df = self._faellig_df()
+        erfolgreich, fehlgeschlagen = _versende_serienmails(
+            smtp_config, ausgewaehlte_ids, faellig_df, betreff_vorlage, text_vorlage,
+            self.pdf_anhaengen_check.isChecked(),
+        )
+
+        meldung = []
+        if erfolgreich:
+            meldung.append(f"{erfolgreich} Mail(s) erfolgreich versendet.")
+        if fehlgeschlagen:
+            meldung.append(f"{len(fehlgeschlagen)} Mail(s) fehlgeschlagen:\n" + "\n".join(f"- {f}" for f in fehlgeschlagen))
+        QMessageBox.information(self, "Beitragsmahnung", "\n\n".join(meldung) if meldung else "Nichts versendet.")
+        self.refresh_table()
+
+    def _kassierer_benachrichtigen(self):
+        try:
+            smtp_config = mailer.smtp_konfiguration(adapter.smtp_secrets_wrapper())
+            empfaenger = mailer.kassierer_email(smtp_config)
+        except mailer.SmtpNichtKonfiguriert as exc:
+            QMessageBox.critical(self, "SMTP nicht konfiguriert", str(exc))
+            return
+
+        faellig_df = self._faellig_df()
+        text = mitglieder.build_kassierer_beitragsuebersicht(faellig_df)
+        try:
+            mailer.send_mail(smtp_config, empfaenger, "Übersicht fälliger Mitgliedsbeiträge", text)
+        except Exception as exc:
+            QMessageBox.critical(self, "Versand fehlgeschlagen", str(exc))
+            return
+        QMessageBox.information(self, "Erfolg", f"Kassierer ({empfaenger}) wurde benachrichtigt.")
+
+
+# ---------------------------------------------------------------------------
+# Backup
+# ---------------------------------------------------------------------------
+BACKUP_BESTAETIGUNGSTEXT = "WIEDERHERSTELLEN"
+
+
+class BackupPage(QWidget):
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        layout = QVBoxLayout(self)
+
+        erstellen_box = QGroupBox("Backup erstellen")
+        erstellen_layout = QVBoxLayout(erstellen_box)
+        erstellen_layout.addWidget(QLabel(
+            "Erstellt ein ZIP-Archiv mit allen Mitgliederdaten (CSV, Fotos, "
+            "Anhänge, Mail-Verlauf, Zahlungshistorie)."
+        ))
+        self.backup_erstellen_btn = QPushButton("Backup erstellen...")
+        self.backup_erstellen_btn.clicked.connect(self._backup_erstellen)
+        erstellen_layout.addWidget(self.backup_erstellen_btn)
+        layout.addWidget(erstellen_box)
+
+        restore_box = QGroupBox("Backup wiederherstellen")
+        restore_layout = QVBoxLayout(restore_box)
+        restore_layout.addWidget(QLabel(
+            "⚠️ Ersetzt den kompletten aktuellen Datenbestand durch den Inhalt "
+            "eines zuvor erstellten Backups. Vor dem Wiederherstellen wird "
+            "automatisch ein Sicherheits-Backup des aktuellen Standes angelegt."
+        ))
+        self.backup_wiederherstellen_btn = QPushButton("Backup wiederherstellen...")
+        self.backup_wiederherstellen_btn.clicked.connect(self._backup_wiederherstellen)
+        restore_layout.addWidget(self.backup_wiederherstellen_btn)
+        layout.addWidget(restore_box)
+
+        sicherheitsbackups_box = QGroupBox("Automatische Sicherheits-Backups")
+        sicherheitsbackups_layout = QVBoxLayout(sicherheitsbackups_box)
+        self.sicherheitsbackups_list = QListWidget()
+        sicherheitsbackups_layout.addWidget(self.sicherheitsbackups_list)
+        sicherheitsbackups_btn_row = QHBoxLayout()
+        self.sicherheitsbackup_herunterladen_btn = QPushButton("Ausgewähltes herunterladen...")
+        self.sicherheitsbackup_herunterladen_btn.clicked.connect(self._sicherheitsbackup_herunterladen)
+        sicherheitsbackups_btn_row.addWidget(self.sicherheitsbackup_herunterladen_btn)
+        sicherheitsbackups_layout.addLayout(sicherheitsbackups_btn_row)
+        layout.addWidget(sicherheitsbackups_box, stretch=1)
+
+        self.refresh()
+
+    def refresh(self):
+        self.sicherheitsbackups_list.clear()
+        backups = mitglieder.list_sicherheits_backups()
+        if not backups:
+            self.sicherheitsbackups_list.addItem("Noch keine Sicherheits-Backups vorhanden.")
+            return
+        for pfad in backups:
+            item = QListWidgetItem(pfad.name)
+            item.setData(Qt.UserRole, str(pfad))
+            self.sicherheitsbackups_list.addItem(item)
+
+    def _backup_erstellen(self):
+        zeitstempel = date.today().isoformat()
+        ziel, _ = QFileDialog.getSaveFileName(
+            self, "Backup speichern", f"mitgliederverwaltung_backup_{zeitstempel}.zip", "ZIP-Archiv (*.zip)"
+        )
+        if not ziel:
+            return
+        Path(ziel).write_bytes(mitglieder.build_backup_zip())
+        QMessageBox.information(self, "Erfolg", "Backup wurde gespeichert.")
+
+    def _backup_wiederherstellen(self):
+        quelle, _ = QFileDialog.getOpenFileName(self, "Backup auswählen", "", "ZIP-Archiv (*.zip)")
+        if not quelle:
+            return
+
+        antwort = QMessageBox.warning(
+            self, "Wiederherstellen bestätigen",
+            "Wirklich den kompletten aktuellen Datenbestand durch dieses Backup "
+            "ersetzen? Diese Aktion kann nur über ein Sicherheits-Backup "
+            "rückgängig gemacht werden.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if antwort != QMessageBox.Yes:
+            return
+
+        bestaetigung, ok = QInputDialog.getText(
+            self, "Endgültig bestätigen",
+            f"Bitte tippe zur Bestätigung genau \"{BACKUP_BESTAETIGUNGSTEXT}\" ein:",
+        )
+        if not ok or bestaetigung.strip() != BACKUP_BESTAETIGUNGSTEXT:
+            QMessageBox.information(self, "Abgebrochen", "Wiederherstellen wurde abgebrochen.")
+            return
+
+        try:
+            zip_bytes = Path(quelle).read_bytes()
+            mitglieder.restore_from_backup(zip_bytes)
+        except mitglieder.UngueltigesBackup as exc:
+            QMessageBox.critical(self, "Ungültiges Backup", str(exc))
+            return
+
+        QMessageBox.information(self, "Erfolg", "Backup wurde wiederhergestellt.")
+        self.refresh()
+        self.main_window.zeige_uebersicht()
+
+    def _sicherheitsbackup_herunterladen(self):
+        item = self.sicherheitsbackups_list.currentItem()
+        if not item or not item.data(Qt.UserRole):
+            return
+        quelle = Path(item.data(Qt.UserRole))
+        ziel, _ = QFileDialog.getSaveFileName(self, "Sicherheits-Backup speichern", quelle.name, "ZIP-Archiv (*.zip)")
+        if ziel:
+            Path(ziel).write_bytes(quelle.read_bytes())
+            QMessageBox.information(self, "Erfolg", "Sicherheits-Backup wurde gespeichert.")
 
 
 # ---------------------------------------------------------------------------
@@ -1004,7 +1425,7 @@ class MainWindow(QMainWindow):
         sidebar.setMaximumWidth(160)
 
         self.nav_list = QListWidget()
-        self.nav_list.addItems(["Übersicht", "Neues Mitglied", "Serienmail"])
+        self.nav_list.addItems(["Übersicht", "Neues Mitglied", "Serienmail", "Beitragsmahnung", "Backup"])
         self.nav_list.currentRowChanged.connect(self._navigiere)
         sidebar_layout.addWidget(self.nav_list)
 
@@ -1020,9 +1441,13 @@ class MainWindow(QMainWindow):
         self.uebersicht_page = UebersichtPage(self)
         self.neues_mitglied_page = NeuesMitgliedPage(self)
         self.serienmail_page = SerienmailPage(self)
+        self.beitragsmahnung_page = BeitragsmahnungPage(self)
+        self.backup_page = BackupPage(self)
         self.stack.addWidget(self.uebersicht_page)
         self.stack.addWidget(self.neues_mitglied_page)
         self.stack.addWidget(self.serienmail_page)
+        self.stack.addWidget(self.beitragsmahnung_page)
+        self.stack.addWidget(self.backup_page)
         main_layout.addWidget(self.stack, stretch=1)
 
         self.nav_list.setCurrentRow(0)
@@ -1034,6 +1459,10 @@ class MainWindow(QMainWindow):
             self.uebersicht_page.refresh_table()
         elif index == 2:
             self.serienmail_page.refresh_table()
+        elif index == 3:
+            self.beitragsmahnung_page.refresh_table()
+        elif index == 4:
+            self.backup_page.refresh()
 
     def zeige_uebersicht(self):
         self.nav_list.setCurrentRow(0)

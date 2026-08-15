@@ -8,13 +8,15 @@ ursprünglich aus der Streamlit-Web-App
 und wurden für dieses eigenständige Repo übernommen.
 
 **Funktionsumfang:** Mitglieder-CRUD mit allen Feldern (inkl.
-Beitragsverwaltung, gesetzlicher Vertreter), Foto & Anhänge pro Mitglied,
-Mail-Verlauf, vCard-/Mitgliedsausweis-Export, Excel-/PDF-Export der Liste,
-Geburtstags-/Jubiläumsübersicht, Filter/Suche und Serienmail-Versand per SMTP.
+Beitragsverwaltung, SEPA-Mandat, gesetzlicher Vertreter), Foto & Anhänge pro
+Mitglied, Zahlungshistorie, Mail-Verlauf, vCard-/Mitgliedsausweis-/SEPA-Mandat-
+Export, Excel-/PDF-Export der Liste, Geburtstags-/Jubiläumsübersicht,
+Filter/Suche, Serienmail- und Beitragsmahnung-Versand per SMTP sowie
+Backup/Restore.
 
-**Aktueller Status:** Phase 1 (vollständig lokal). Eine Synchronisation mit
-einem Server ist für eine spätere Phase 2 vorgesehen – `src/sync.py` ist
-bewusst nur ein Platzhalter, für den Offline-Betrieb wird kein Server benötigt.
+**Aktueller Umsetzungsstand:** siehe [PLAN.md](PLAN.md) — dort steht, was
+bereits umgesetzt ist und was als Backlog noch offen bleibt (Kalender,
+Terminabfrage, Excel-Import, weitere PDF-Exporte, Server-Synchronisation).
 
 ---
 
@@ -65,17 +67,20 @@ Alternativ (nach dem Build, siehe unten):
 
 ## 🧪 Nutzung
 
-Nach dem Login öffnet sich das Hauptfenster mit drei Ansichten in der Seitenleiste:
+Nach dem Login öffnet sich das Hauptfenster mit fünf Ansichten in der Seitenleiste:
 
 | Ansicht | Funktionen |
 |---|---|
 | **Übersicht** | Metriken, Geburtstage (30 Tage)/Jubiläen, Filter (Status/Gruppe/Suche), Tabelle, Doppelklick öffnet Bearbeiten-Dialog, Excel-/PDF-Export |
-| **Neues Mitglied** | Vollständiges Formular (alle Felder inkl. Beitragsverwaltung, gesetzlicher Vertreter), optional Foto + Anhänge |
+| **Neues Mitglied** | Formular in 3 Tabs — Persönliche Daten, Gruppen & Mitgliedschaft, Konto & SEPA (inkl. IBAN/Kontoinhaber/Mandatsreferenz) —, optional Foto + Anhänge |
 | **Serienmail** | Mehrfachauswahl, Betreff/Text mit Platzhaltern (`{Vorname}` etc.), Versand per SMTP, Mail-Log je Mitglied |
+| **Beitragsmahnung** | Liste fälliger Mitglieder (berechnet aus letzter Zahlung + Zahlungsrhythmus), Mahnungsversand mit Platzhaltern, „Kassierer benachrichtigen“-Sammelmail |
+| **Backup** | Backup als ZIP erstellen/wiederherstellen (mit doppelter Bestätigung), automatische Sicherheits-Backups vor jedem Restore |
 
 Der Bearbeiten-Dialog (aus der Übersicht) enthält zusätzlich: Foto
-hinzufügen/löschen, Anhänge hinzufügen/öffnen/löschen, Mail-Verlauf, vCard- und
-Mitgliedsausweis-Export, Mitglied löschen (mit Bestätigung).
+hinzufügen/löschen, Anhänge hinzufügen/öffnen/löschen, Mail-Verlauf, Zahlung
+erfassen + Zahlungsverlauf, vCard-/Mitgliedsausweis-/SEPA-Mandat-Export,
+Mitglied löschen (mit Bestätigung).
 
 ### Versionsnummer
 
@@ -90,11 +95,14 @@ Nachkommastelle zurück auf 00) — analog zum Muster der Web-App.
   `data/` (CSV + `fotos/` + `anhaenge/` + `mail_log/`, nicht versioniert).
 - Der "Synchronisieren"-Menüpunkt (Phase 2) ist noch nicht angebunden.
 
-### Serienmail einrichten
+### Serienmail / Beitragsmahnung einrichten
 
-In der Serienmail-Ansicht über **"SMTP-Einstellungen..."** Host, Port, Benutzer,
-Passwort und Absenderadresse eines bestehenden E-Mail-Kontos hinterlegen
-(gespeichert lokal in `%APPDATA%\Mitgliederverwaltung\smtp_config.json`).
+In der Serienmail- oder Beitragsmahnung-Ansicht über **"SMTP-Einstellungen..."**
+Host, Port, Benutzer, Passwort und Absenderadresse eines bestehenden
+E-Mail-Kontos hinterlegen (gespeichert lokal in
+`%APPDATA%\Mitgliederverwaltung\smtp_config.json`). Für den Button „Kassierer
+benachrichtigen“ in der Beitragsmahnung-Ansicht zusätzlich die
+Kassierer-E-Mail-Adresse im selben Dialog eintragen.
 
 ---
 
@@ -165,7 +173,9 @@ mitgelieferten Abhängigkeiten (Python-Laufzeit, Qt5, pandas usw.).
 ├── mitglieder.py                # Datenlayer (Übernahme aus der Web-App)
 ├── mailer.py                    # SMTP-Versand (Übernahme aus der Web-App)
 ├── data/                        # lokale Daten (nicht versioniert, .gitignore)
+├── backups/                     # automatische Sicherheits-Backups (nicht versioniert)
 ├── requirements.txt
+├── PLAN.md                      # Umsetzungsstand & Backlog
 └── README.md
 ```
 
@@ -173,7 +183,8 @@ mitgelieferten Abhängigkeiten (Python-Laufzeit, Qt5, pandas usw.).
 > [Mitgliederverwaltung](https://github.com/dirkheerstrass-lab/Mitgliederverwaltung)
 > (Web-App). Änderungen an der Datenschicht dort (z. B. neue Felder, neue
 > Validierungsregeln) müssen bei Bedarf manuell hierher übertragen werden, da
-> beide Repos bewusst unabhängig voneinander sind.
+> beide Repos bewusst unabhängig voneinander sind. Aktueller Abgleichsstand
+> siehe [PLAN.md](PLAN.md).
 
 ---
 
