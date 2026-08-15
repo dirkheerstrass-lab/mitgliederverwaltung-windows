@@ -72,6 +72,13 @@ Der Bearbeiten-Dialog (aus der Übersicht) enthält zusätzlich: Foto
 hinzufügen/löschen, Anhänge hinzufügen/öffnen/löschen, Mail-Verlauf, vCard- und
 Mitgliedsausweis-Export, Mitglied löschen (mit Bestätigung).
 
+### Versionsnummer
+
+`VERSION` in `src/gui.py` (unten links in der Seitenleiste angezeigt) wird bei
+jedem Fix erhöht: kleine Fixes erhöhen die Nachkommastelle (z. B. 1.00 →
+1.01), größere/strukturelle Änderungen die Vorkommastelle (z. B. 1.05 → 2.00,
+Nachkommastelle zurück auf 00) — analog zum Muster der Web-App.
+
 ### Offline-Modus
 
 - Die App funktioniert **vollständig offline**. Alle Daten liegen lokal unter

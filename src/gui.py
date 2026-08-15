@@ -52,6 +52,10 @@ from mitglieder_adapter import mitglieder, mailer, LocalUploadedFile
 
 COLUMNS = mitglieder.COLUMNS
 
+# Wird bei jedem Fix erhöht: kleine Fixes -> Nachkommastelle (1.00 -> 1.01),
+# größere/strukturelle Änderungen -> Vorkommastelle (1.05 -> 2.00, Nachkommastelle zurück auf 00).
+VERSION = "1.00"
+
 
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen für Datumsfelder (optional/verpflichtend, ISO-Format)
@@ -994,11 +998,23 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         main_layout = QHBoxLayout(central)
 
+        sidebar = QWidget()
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar.setMaximumWidth(160)
+
         self.nav_list = QListWidget()
         self.nav_list.addItems(["Übersicht", "Neues Mitglied", "Serienmail"])
-        self.nav_list.setMaximumWidth(160)
         self.nav_list.currentRowChanged.connect(self._navigiere)
-        main_layout.addWidget(self.nav_list)
+        sidebar_layout.addWidget(self.nav_list)
+
+        sidebar_layout.addStretch(1)
+
+        version_label = QLabel(f"v{VERSION}")
+        version_label.setStyleSheet("color: gray; padding: 4px;")
+        sidebar_layout.addWidget(version_label)
+
+        main_layout.addWidget(sidebar)
 
         self.stack = QStackedWidget()
         self.uebersicht_page = UebersichtPage(self)
