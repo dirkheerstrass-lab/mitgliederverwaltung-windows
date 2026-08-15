@@ -16,11 +16,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # Falls dieser Pfad als Paket gestartet wird, src/ bereits im Pfad
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
 from auth import login_dialog
 from gui import MainWindow
 
 def main():
+    # Vor der QApplication-Erzeugung setzen, damit Qt konsistent mit der
+    # Windows-Skalierung (125 %/150 %, auf Laptops Standard) rendert -
+    # ohne das passen Fenstergröße und Schriftgröße nicht zusammen und
+    # fest dimensionierte Elemente wie die Sidebar wirken zu schmal.
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
 
     # Login-Dialog öffnen

@@ -1422,12 +1422,20 @@ class MainWindow(QMainWindow):
         sidebar = QWidget()
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
-        sidebar.setMaximumWidth(160)
 
         self.nav_list = QListWidget()
         self.nav_list.addItems(["Übersicht", "Neues Mitglied", "Serienmail", "Beitragsmahnung", "Backup"])
         self.nav_list.currentRowChanged.connect(self._navigiere)
         sidebar_layout.addWidget(self.nav_list)
+
+        # Breite anhand der tatsächlichen Textbreite des längsten Eintrags
+        # berechnen statt eines festen Pixelwerts - passt sich dadurch
+        # automatisch an Systemschriftgröße/DPI-Skalierung an, statt bei
+        # höherer Auflösung/Skalierung Einträge wie "Beitragsmahnung"
+        # abzuschneiden.
+        sidebar_breite = self._berechne_sidebar_breite(self.nav_list)
+        sidebar.setMinimumWidth(sidebar_breite)
+        sidebar.setMaximumWidth(sidebar_breite)
 
         sidebar_layout.addStretch(1)
 
@@ -1452,6 +1460,20 @@ class MainWindow(QMainWindow):
 
         self.nav_list.setCurrentRow(0)
         self.uebersicht_page.refresh_table()
+
+    @staticmethod
+    def _berechne_sidebar_breite(nav_list: QListWidget) -> int:
+        """Ermittelt die zur längsten Navigationsbeschriftung passende Breite
+        über QFontMetrics, statt einen festen Pixelwert zu hardcoden."""
+        from PyQt5.QtGui import QFontMetrics
+
+        metriken = QFontMetrics(nav_list.font())
+        breiteste_beschriftung = max(
+            (metriken.horizontalAdvance(nav_list.item(i).text()) for i in range(nav_list.count())),
+            default=0,
+        )
+        polsterung = 48  # Auswahl-Highlight, Innenabstände, ggf. Scrollbar
+        return breiteste_beschriftung + polsterung
 
     def _navigiere(self, index: int):
         self.stack.setCurrentIndex(index)

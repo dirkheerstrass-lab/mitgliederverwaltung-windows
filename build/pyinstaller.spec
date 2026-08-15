@@ -67,7 +67,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,  # kein UPX: vermeidet Entpack-Overhead jeder DLL/.pyd beim Start (mehr Speicherplatz statt langsamerem Start)
-    console=True,  # Konsolenlog (für CLI-Debugging)
+    console=False,  # Windowed-Modus: kein zusätzliches Konsolenfenster - alle Meldungen laufen über QMessageBox
     # icon='resources/icons/app.ico',  # einkommentieren, sobald ein Icon vorhanden ist
     uac_admin=False,
 )
