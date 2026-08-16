@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox
+import mitglieder_adapter as adapter
 from auth import login_dialog
 from gui import MainWindow
 
@@ -39,6 +40,13 @@ def main():
     # Login erfolgreich → Hauptfenster öffnen
     window = MainWindow()
     window.show()
+
+    # Einmalige Migrationsmeldung, falls beim Import von mitglieder_adapter
+    # (siehe dort) Daten von ihrem alten, unsicheren Speicherort nach
+    # %APPDATA% verschoben wurden.
+    if adapter.MIGRATION_MELDUNG:
+        QMessageBox.information(window, "Daten migriert", adapter.MIGRATION_MELDUNG)
+
     sys.exit(app.exec_())
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ Hinweis: mitglieder.py/mailer.py sind eine Kopie aus dem Haupt-Repo
 manuell synchron gehalten, da dieses Repo bewusst eigenständig ist.
 """
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -28,20 +29,63 @@ if str(PROJECT_ROOT) not in sys.path:
 import mitglieder  # noqa: E402
 import mailer  # noqa: E402
 
-# Lokales Datenverzeichnis im App-Ordner (nicht versioniert, siehe .gitignore).
+# WICHTIG: Nutzerdaten liegen bewusst NICHT im App-/Repo-Ordner (wie früher),
+# sondern in %APPDATA%\Mitgliederverwaltung\ - genau wie schon users.json,
+# smtp_config.json und spalten_config.json. Grund: PyInstaller löscht beim
+# Bauen (COLLECT-Schritt) den kompletten dist/Mitgliederverwaltung/-Ordner
+# und legt ihn neu an, bevor die neuen Dateien hineinkopiert werden - lag
+# data/ dort (weil PROJECT_ROOT im gebauten Build = Ordner neben der .exe),
+# wurden die echten Mitgliederdaten bei jedem Neubau der .exe mitgelöscht.
+# %APPDATA% liegt komplett außerhalb dieses Build-Ordners und ist davon nie
+# betroffen - unabhängig davon, wie oft die App neu gebaut wird.
+APPDATA_ROOT = Path.home() / "AppData" / "Roaming" / "Mitgliederverwaltung"
+_DATA_DIR = APPDATA_ROOT / "data"
+_BACKUPS_DIR = APPDATA_ROOT / "backups"
+
 # Alle Verzeichniskonstanten, die mitglieder.py beim eigenen Import einmalig
 # aus seinem eigenen BASE_DIR ableitet, werden hier explizit auf denselben
 # Root umgebogen - sich nur auf DATA_DIR zu verlassen reicht nicht, da
 # BACKUPS_DIR/ZAHLUNGEN_DIR eigenständige Modulkonstanten sind, die nicht
 # automatisch mit DATA_DIR "mitwandern".
-_DATA_DIR = PROJECT_ROOT / "data"
 mitglieder.DATA_DIR = _DATA_DIR
 mitglieder.CSV_PATH = _DATA_DIR / "mitglieder.csv"
 mitglieder.FOTOS_DIR = _DATA_DIR / "fotos"
 mitglieder.ANHAENGE_DIR = _DATA_DIR / "anhaenge"
 mitglieder.MAIL_LOG_DIR = _DATA_DIR / "mail_log"
 mitglieder.ZAHLUNGEN_DIR = _DATA_DIR / "zahlungen"
-mitglieder.BACKUPS_DIR = PROJECT_ROOT / "backups"
+mitglieder.BACKUPS_DIR = _BACKUPS_DIR
+
+
+def _einmalige_datenmigration() -> str | None:
+    """Verschiebt data/ bzw. backups/ von ihrem alten, unsicheren Ort (neben
+    der .exe bzw. im Repo-Root) nach %APPDATA%, falls dort noch Daten aus
+    einer älteren Version dieser App liegen und in %APPDATA% noch nichts
+    existiert. Gibt eine Nutzer-Meldung zurück, falls migriert wurde, sonst
+    None. Läuft nur einmal, danach existiert der neue Ordner bereits."""
+    alte_data_dir = PROJECT_ROOT / "data"
+    alte_backups_dir = PROJECT_ROOT / "backups"
+    migriert = []
+
+    if alte_data_dir.exists() and not _DATA_DIR.exists():
+        _DATA_DIR.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(alte_data_dir), str(_DATA_DIR))
+        migriert.append("Mitgliederdaten")
+
+    if alte_backups_dir.exists() and not _BACKUPS_DIR.exists():
+        _BACKUPS_DIR.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(alte_backups_dir), str(_BACKUPS_DIR))
+        migriert.append("Sicherheits-Backups")
+
+    if not migriert:
+        return None
+    return (
+        f"{' und '.join(migriert)} wurden einmalig von {PROJECT_ROOT} nach "
+        f"{APPDATA_ROOT} verschoben, damit sie bei zukünftigen .exe-Neubauten "
+        f"nicht mehr versehentlich gelöscht werden können."
+    )
+
+
+MIGRATION_MELDUNG = _einmalige_datenmigration()
 
 
 class LocalUploadedFile:

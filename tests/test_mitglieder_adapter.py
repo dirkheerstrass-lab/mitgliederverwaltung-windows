@@ -237,10 +237,10 @@ def test_adapter_ueberschreibt_backups_und_zahlungen_dir():
     assert mitglieder.ZAHLUNGEN_DIR == mitglieder.DATA_DIR / "zahlungen"
 
 
-def test_adapter_frozen_mode_verankert_an_exe_ordner(monkeypatch):
-    """Regressionstest für den Bug 'Sicherheits-Backups werden nicht
-    angezeigt': im PyInstaller-Onedir-Build muss der Datenordner am Ordner der
-    .exe (sys.executable) hängen, nicht an Path(__file__) von
+def test_adapter_frozen_mode_verankert_project_root_an_exe_ordner(monkeypatch):
+    """PROJECT_ROOT (für sys.path/sys.executable-Auflösung, u. a. für die
+    einmalige Datenmigration relevant) muss im PyInstaller-Onedir-Build am
+    Ordner der .exe (sys.executable) hängen, nicht an Path(__file__) von
     mitglieder_adapter.py - dieser liegt im gebauten Programm in _internal/,
     nicht neben der .exe."""
     import importlib
@@ -251,11 +251,70 @@ def test_adapter_frozen_mode_verankert_an_exe_ordner(monkeypatch):
     try:
         importlib.reload(adapter)
         assert adapter.PROJECT_ROOT == fake_exe.parent
-        assert adapter.mitglieder.BACKUPS_DIR == fake_exe.parent / "backups"
-        assert adapter.mitglieder.DATA_DIR == fake_exe.parent / "data"
     finally:
         monkeypatch.delattr(sys, "frozen", raising=False)
         importlib.reload(adapter)  # Modulzustand für nachfolgende Tests zurücksetzen
+
+
+def test_daten_liegen_immer_in_appdata_unabhaengig_von_frozen(monkeypatch):
+    """Regressionstest für den Datenverlust-Bug: data/ und backups/ dürfen
+    NICHT im App-/Build-Ordner liegen (weder im Repo-Root noch neben der
+    .exe), da PyInstaller beim Bauen (COLLECT) den kompletten Zielordner
+    löscht und neu anlegt - das hat zuvor echte Mitgliederdaten bei jedem
+    .exe-Neubau mitgelöscht. DATA_DIR/BACKUPS_DIR müssen immer unter
+    %APPDATA%\\Mitgliederverwaltung liegen, unabhängig vom frozen-Status."""
+    import importlib
+
+    assert adapter.mitglieder.DATA_DIR == adapter.APPDATA_ROOT / "data"
+    assert adapter.mitglieder.BACKUPS_DIR == adapter.APPDATA_ROOT / "backups"
+
+    fake_exe = Path(tempfile.mkdtemp()) / "Mitgliederverwaltung.exe"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_exe))
+    try:
+        importlib.reload(adapter)
+        assert adapter.mitglieder.DATA_DIR == adapter.APPDATA_ROOT / "data"
+        assert adapter.mitglieder.BACKUPS_DIR == adapter.APPDATA_ROOT / "backups"
+        # Insbesondere NICHT im (beim Bauen geloeschten) Ordner neben der .exe:
+        assert adapter.mitglieder.DATA_DIR != fake_exe.parent / "data"
+    finally:
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        importlib.reload(adapter)
+
+
+def test_einmalige_datenmigration_verschiebt_alte_daten(monkeypatch, tmp_path):
+    """Simuliert eine alte Installation mit Daten neben der .exe (bzw. im
+    Repo-Root) und prüft, dass die einmalige Migration sie zuverlässig nach
+    %APPDATA% verschiebt, ohne Daten zu verlieren."""
+    import importlib
+
+    alter_projekt_ordner = tmp_path / "alte_installation"
+    (alter_projekt_ordner / "data" / "fotos").mkdir(parents=True)
+    (alter_projekt_ordner / "data" / "mitglieder.csv").write_text("ID,Vorname\n1,Erika\n", encoding="utf-8")
+    (alter_projekt_ordner / "data" / "fotos" / "1.jpg").write_bytes(b"bilddaten")
+    (alter_projekt_ordner / "backups").mkdir(parents=True)
+    (alter_projekt_ordner / "backups" / "vor_restore_test.zip").write_bytes(b"PK\x03\x04")
+
+    neuer_appdata_ordner = tmp_path / "neues_appdata" / "Mitgliederverwaltung"
+
+    monkeypatch.setattr(adapter, "PROJECT_ROOT", alter_projekt_ordner)
+    monkeypatch.setattr(adapter, "APPDATA_ROOT", neuer_appdata_ordner)
+    monkeypatch.setattr(adapter, "_DATA_DIR", neuer_appdata_ordner / "data")
+    monkeypatch.setattr(adapter, "_BACKUPS_DIR", neuer_appdata_ordner / "backups")
+
+    meldung = adapter._einmalige_datenmigration()
+
+    assert meldung is not None
+    assert "Mitgliederdaten" in meldung and "Sicherheits-Backups" in meldung
+    assert (neuer_appdata_ordner / "data" / "mitglieder.csv").read_text(encoding="utf-8") == "ID,Vorname\n1,Erika\n"
+    assert (neuer_appdata_ordner / "data" / "fotos" / "1.jpg").read_bytes() == b"bilddaten"
+    assert (neuer_appdata_ordner / "backups" / "vor_restore_test.zip").exists()
+    assert not (alter_projekt_ordner / "data").exists(), "Alter Ordner sollte verschoben (nicht kopiert) worden sein"
+
+    # Zweiter Aufruf (z. B. beim nächsten Programmstart) darf nichts mehr tun,
+    # da im Zielordner schon Daten liegen und der alte Ordner nicht mehr existiert.
+    meldung2 = adapter._einmalige_datenmigration()
+    assert meldung2 is None
 
 
 if __name__ == "__main__":

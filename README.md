@@ -92,7 +92,15 @@ Nachkommastelle zurück auf 00) — analog zum Muster der Web-App.
 ### Offline-Modus
 
 - Die App funktioniert **vollständig offline**. Alle Daten liegen lokal unter
-  `data/` (CSV + `fotos/` + `anhaenge/` + `mail_log/`, nicht versioniert).
+  `%APPDATA%\Mitgliederverwaltung\data\` (CSV + `fotos/` + `anhaenge/` +
+  `mail_log/`) und `%APPDATA%\Mitgliederverwaltung\backups\` — **nicht** im
+  Programmordner selbst. Das ist bewusst so: PyInstaller löscht beim Bauen
+  der `.exe` den kompletten Ausgabeordner (`dist\Mitgliederverwaltung\`) und
+  legt ihn neu an — lägen die Mitgliederdaten dort, würden sie bei jedem
+  Neubau der `.exe` verloren gehen. Beim ersten Start nach einem Update von
+  einer älteren Version, die Daten noch im Programmordner hatte, werden sie
+  automatisch einmalig nach `%APPDATA%` verschoben (Hinweis-Meldung beim
+  Start).
 - Der "Synchronisieren"-Menüpunkt (Phase 2) ist noch nicht angebunden.
 
 ### Serienmail / Beitragsmahnung einrichten
@@ -173,7 +181,7 @@ mitgelieferten Abhängigkeiten (Python-Laufzeit, Qt5, pandas usw.).
 .
 ├── src/
 │   ├── auth.py                 # Lokale Authentifizierung (users.json in %APPDATA%)
-│   ├── mitglieder_adapter.py   # Bindet mitglieder.py/mailer.py ein, eigenes data/-Verzeichnis
+│   ├── mitglieder_adapter.py   # Bindet mitglieder.py/mailer.py ein, Datenordner in %APPDATA%
 │   ├── gui.py                  # PyQt5-Hauptfenster + alle Ansichten/Dialoge
 │   ├── main.py                 # Entry-Point (Login → MainWindow)
 │   └── sync.py                 # Sync-Engine (Phase 2: Stub/Platzhalter)
@@ -183,8 +191,6 @@ mitgelieferten Abhängigkeiten (Python-Laufzeit, Qt5, pandas usw.).
 │   └── pyinstaller.spec        # Build-Konfiguration
 ├── mitglieder.py                # Datenlayer (Übernahme aus der Web-App)
 ├── mailer.py                    # SMTP-Versand (Übernahme aus der Web-App)
-├── data/                        # lokale Daten (nicht versioniert, .gitignore)
-├── backups/                     # automatische Sicherheits-Backups (nicht versioniert)
 ├── requirements.txt
 ├── PLAN.md                      # Umsetzungsstand & Backlog
 └── README.md
