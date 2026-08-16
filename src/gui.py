@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from datetime import date
 
-from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -59,7 +59,7 @@ COLUMNS = mitglieder.COLUMNS
 
 # Wird bei jedem Fix erhöht: kleine Fixes -> Nachkommastelle (1.00 -> 1.01),
 # größere/strukturelle Änderungen -> Vorkommastelle (1.05 -> 2.00, Nachkommastelle zurück auf 00).
-VERSION = "1.04"
+VERSION = "1.05"
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +376,144 @@ class MemberFormWidget(QWidget):
         self.sepa_referenz.setText(member.get("SEPA_Mandatsreferenz", ""))
         self.sepa_datum.set_iso(member.get("SEPA_Mandatsdatum", ""))
         self._update_naechste_faellig()
+
+
+# ---------------------------------------------------------------------------
+# Anzeige-Dialog (schreibgeschützte Profilkarte, öffnet sich per Einzelklick)
+# ---------------------------------------------------------------------------
+class MemberViewDialog(QDialog):
+    """Schreibgeschützte Profilkarte: Foto rechts, Basisdaten links, im
+    Karten-Stil. Öffnet sich per Einzelklick auf eine Zeile in der
+    Übersicht; ein "Bearbeiten"-Button darin öffnet MemberEditDialog."""
+
+    def __init__(self, parent, uebersicht_page, mitglied_id: str):
+        super().__init__(parent)
+        self.uebersicht_page = uebersicht_page
+        self.mitglied_id = mitglied_id
+        self.setWindowTitle("Mitglied anzeigen")
+        self.resize(520, 480)
+
+        outer = QVBoxLayout(self)
+
+        self.header_label = QLabel()
+        self.header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        outer.addWidget(self.header_label)
+
+        card = QWidget()
+        card.setStyleSheet(
+            "background-color: rgba(127, 127, 127, 20); border-radius: 8px;"
+        )
+        card_layout = QVBoxLayout(card)
+
+        subheader = QLabel("Basisdaten")
+        subheader.setStyleSheet("font-weight: bold; color: gray; letter-spacing: 1px;")
+        card_layout.addWidget(subheader)
+
+        content_row = QHBoxLayout()
+        self.daten_form = QFormLayout()
+        self.daten_form.setLabelAlignment(Qt.AlignLeft)
+        content_row.addLayout(self.daten_form, stretch=1)
+
+        foto_spalte = QVBoxLayout()
+        self.foto_label = QLabel()
+        self.foto_label.setFixedSize(110, 110)
+        self.foto_label.setAlignment(Qt.AlignCenter)
+        self.foto_label.setStyleSheet("border: 1px solid gray; border-radius: 4px; color: gray;")
+        foto_spalte.addWidget(self.foto_label, alignment=Qt.AlignHCenter)
+        self.foto_hochladen_btn = QPushButton("📤 Profilbild hochladen")
+        self.foto_hochladen_btn.setFlat(True)
+        self.foto_hochladen_btn.setStyleSheet("color: #2a6ebb; border: none; text-decoration: underline;")
+        self.foto_hochladen_btn.clicked.connect(self._foto_hochladen)
+        foto_spalte.addWidget(self.foto_hochladen_btn, alignment=Qt.AlignHCenter)
+        foto_spalte.addStretch(1)
+        content_row.addLayout(foto_spalte)
+
+        card_layout.addLayout(content_row)
+        outer.addWidget(card)
+
+        btn_row = QHBoxLayout()
+        self.bearbeiten_btn = QPushButton("Bearbeiten...")
+        self.bearbeiten_btn.clicked.connect(self._bearbeiten_oeffnen)
+        schliessen_btn = QPushButton("Schließen")
+        schliessen_btn.clicked.connect(self.accept)
+        btn_row.addWidget(self.bearbeiten_btn)
+        btn_row.addStretch(1)
+        btn_row.addWidget(schliessen_btn)
+        outer.addLayout(btn_row)
+
+        self._daten_laden()
+
+    def _daten_laden(self):
+        df = mitglieder.load_data()
+        treffer = df[df["ID"] == self.mitglied_id]
+        if treffer.empty:
+            self.reject()
+            return
+        member = treffer.iloc[0]
+
+        self.header_label.setText(f"{member['Vorname']} {member['Nachname']}")
+
+        while self.daten_form.rowCount():
+            self.daten_form.removeRow(0)
+
+        adresse_zeilen = [z for z in [member.get("Straße", ""), f"{member.get('PLZ', '')} {member.get('Stadt', '')}".strip()] if z.strip()]
+        gruppen = ", ".join(g.strip() for g in member.get("Gruppen", "").split(";") if g.strip()) or "-"
+
+        geburtstag = member.get("Geburtstag", "")
+        geburtstag_text = "-"
+        if geburtstag:
+            alter = mitglieder.berechne_alter(geburtstag)
+            qd = _iso_to_qdate(geburtstag)
+            geburtstag_text = qd.toString("dd.MM.yyyy") if qd else geburtstag
+            if alter is not None:
+                geburtstag_text += f"  ({alter} Jahre)"
+
+        felder = [
+            ("Mitgliedsnummer", member.get("Mitgliedsnummer", "") or "-"),
+            ("Adresse", "\n".join(adresse_zeilen) or "-"),
+            ("Telefon", member.get("Telefon", "") or "-"),
+            ("Geburtstag", geburtstag_text),
+            ("E-Mail", member.get("E-Mail", "") or "-"),
+            ("Mitgliedsstatus", member.get("Mitgliedsstatus", "") or "-"),
+            ("Gruppen", gruppen),
+            ("Funktion", member.get("Funktion", "") or "-"),
+        ]
+        for label_text, wert in felder:
+            label = QLabel(f"{label_text}:")
+            label.setStyleSheet("color: gray;")
+            wert_label = QLabel(wert)
+            wert_label.setWordWrap(True)
+            self.daten_form.addRow(label, wert_label)
+
+        from PyQt5.QtGui import QPixmap
+
+        foto_pfad = mitglieder.get_photo_path(self.mitglied_id)
+        if foto_pfad and foto_pfad.exists():
+            pix = QPixmap(str(foto_pfad))
+            self.foto_label.setPixmap(pix.scaled(110, 110, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            self.foto_label.setPixmap(QPixmap())
+            self.foto_label.setText("?")
+            self.foto_label.setStyleSheet(
+                self.foto_label.styleSheet() + " font-size: 40px;"
+            )
+
+    def _foto_hochladen(self):
+        pfad, _ = QFileDialog.getOpenFileName(self, "Foto auswählen", "", "Bilder (*.jpg *.jpeg *.png)")
+        if not pfad:
+            return
+        mitglieder.save_photo(self.mitglied_id, LocalUploadedFile(pfad))
+        self._daten_laden()
+
+    def _bearbeiten_oeffnen(self):
+        df = mitglieder.load_data()
+        treffer = df[df["ID"] == self.mitglied_id]
+        if treffer.empty:
+            return
+        dlg = MemberEditDialog(self, self.mitglied_id, treffer.iloc[0].to_dict())
+        if dlg.exec_() == QDialog.Accepted:
+            self.uebersicht_page.refresh_table()
+            self._daten_laden()
 
 
 # ---------------------------------------------------------------------------
@@ -797,6 +935,16 @@ class UebersichtPage(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSortingEnabled(True)
+        # Einzelklick öffnet die Anzeige-Karte, Doppelklick direkt das
+        # Bearbeiten-Formular. Ein Doppelklick löst technisch auch einen
+        # Einzelklick aus - über einen kurzen Timer (Qt-Standard-
+        # Doppelklick-Intervall) wird die Anzeige-Karte nur geöffnet, wenn
+        # innerhalb dieser Zeit kein zweiter Klick folgt.
+        self._klick_timer = QTimer(self)
+        self._klick_timer.setSingleShot(True)
+        self._klick_timer.timeout.connect(self.anzeigen_selected)
+        self.table.itemClicked.connect(self._einzelklick_verzoegert)
+        self.table.doubleClicked.connect(self._klick_timer.stop)
         self.table.doubleClicked.connect(self.edit_selected)
         layout.addWidget(self.table, stretch=1)
         self._spalten_sichtbarkeit_anwenden()
@@ -905,6 +1053,17 @@ class UebersichtPage(QWidget):
         if treffer.empty:
             return None
         return treffer.iloc[0]["ID"]
+
+    def _einzelklick_verzoegert(self, _item):
+        self._klick_timer.stop()
+        self._klick_timer.start(QApplication.doubleClickInterval())
+
+    def anzeigen_selected(self):
+        mitglied_id = self._selected_member_id()
+        if not mitglied_id:
+            return
+        dlg = MemberViewDialog(self, self, mitglied_id)
+        dlg.exec_()
 
     def edit_selected(self):
         mitglied_id = self._selected_member_id()
