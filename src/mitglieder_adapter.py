@@ -136,6 +136,53 @@ def smtp_secrets_wrapper() -> dict:
     return {"smtp": smtp} if smtp else {}
 
 
+def mitgliederzahl_je_jahr(df) -> list:
+    """Liefert eine Liste von (Jahr, Anzahl aktiver Mitglieder am Jahresende)
+    für jedes Jahr von der frühesten Eintrittsdatum-Jahreszahl bis zum
+    aktuellen Jahr - Basis für das Mitgliederentwicklungs-Diagramm. Aktiv am
+    Jahresende bedeutet: Eintrittsjahr <= Jahr und (kein Austrittsdatum oder
+    Austrittsjahr > Jahr)."""
+    from datetime import date
+
+    zeitraeume = []
+    for _, zeile in df.iterrows():
+        eintritt = mitglieder.parse_datum(zeile.get("Eintrittsdatum", ""))
+        if eintritt is None:
+            continue
+        austritt = mitglieder.parse_datum(zeile.get("Austrittsdatum", ""))
+        zeitraeume.append((eintritt.year, austritt.year if austritt else None))
+
+    if not zeitraeume:
+        return []
+
+    start_jahr = min(jahr for jahr, _ in zeitraeume)
+    end_jahr = date.today().year
+    ergebnis = []
+    for jahr in range(start_jahr, end_jahr + 1):
+        anzahl = sum(
+            1 for eintritt_jahr, austritt_jahr in zeitraeume
+            if eintritt_jahr <= jahr and (austritt_jahr is None or austritt_jahr > jahr)
+        )
+        ergebnis.append((jahr, anzahl))
+    return ergebnis
+
+
+def naechste_freie_mitgliedsnummer(df) -> str:
+    """Ermittelt die kleinste positive ganze Zahl, die noch nicht als
+    Mitgliedsnummer vergeben ist - löst also zuerst Lücken durch
+    ausgetretene/gelöschte Mitglieder, bevor eine neue Höchstzahl vorgeschlagen
+    wird. Nicht-numerische/leere Mitgliedsnummern werden ignoriert."""
+    vergeben = set()
+    for wert in df["Mitgliedsnummer"]:
+        wert = str(wert).strip()
+        if wert.isdigit():
+            vergeben.add(int(wert))
+    kandidat = 1
+    while kandidat in vergeben:
+        kandidat += 1
+    return str(kandidat)
+
+
 # --- Spalten-Sichtbarkeit in der Übersichtstabelle (lokal gespeichert) ---
 
 SPALTEN_CONFIG_FILE = Path.home() / "AppData" / "Roaming" / "Mitgliederverwaltung" / "spalten_config.json"

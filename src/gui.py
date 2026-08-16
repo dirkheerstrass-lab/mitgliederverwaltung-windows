@@ -59,7 +59,7 @@ COLUMNS = mitglieder.COLUMNS
 
 # Wird bei jedem Fix erhöht: kleine Fixes -> Nachkommastelle (1.00 -> 1.01),
 # größere/strukturelle Änderungen -> Vorkommastelle (1.05 -> 2.00, Nachkommastelle zurück auf 00).
-VERSION = "1.06"
+VERSION = "1.07"
 
 
 # ---------------------------------------------------------------------------
@@ -150,8 +150,14 @@ class MemberFormWidget(QWidget):
         col1.addRow("E-Mail *:", self.email)
         self.telefon = QLineEdit()
         col1.addRow("Telefon:", self.telefon)
+        mitgliedsnummer_row = QHBoxLayout()
         self.mitgliedsnummer = QLineEdit()
-        col1.addRow("Mitgliedsnummer:", self.mitgliedsnummer)
+        mitgliedsnummer_row.addWidget(self.mitgliedsnummer)
+        mitgliedsnummer_vorschlagen_btn = QPushButton("Vorschlagen")
+        mitgliedsnummer_vorschlagen_btn.setToolTip("Kleinste noch freie Mitgliedsnummer vorschlagen (füllt Lücken durch ausgetretene Mitglieder zuerst)")
+        mitgliedsnummer_vorschlagen_btn.clicked.connect(self._mitgliedsnummer_vorschlagen)
+        mitgliedsnummer_row.addWidget(mitgliedsnummer_vorschlagen_btn)
+        col1.addRow("Mitgliedsnummer:", mitgliedsnummer_row)
         grid.addLayout(col1, 0, 0)
 
         col2 = QFormLayout()
@@ -279,6 +285,9 @@ class MemberFormWidget(QWidget):
         outer.addWidget(sepa_box)
         outer.addStretch(1)
         return tab
+
+    def _mitgliedsnummer_vorschlagen(self):
+        self.mitgliedsnummer.setText(adapter.naechste_freie_mitgliedsnummer(mitglieder.load_data()))
 
     def _update_naechste_faellig(self, *_args):
         naechste = mitglieder.compute_next_due(self.letzte_zahlung.get_iso(), self.zahlungsrhythmus.currentText())
@@ -884,6 +893,59 @@ class SpaltenAuswahlDialog(QDialog):
         return [spalte for spalte, checkbox in self._checkboxen.items() if not checkbox.isChecked()]
 
 
+class MitgliederEntwicklungWidget(QWidget):
+    """Einfaches Balkendiagramm zur Mitgliederzahl je Jahr, gezeichnet über
+    QPainter statt einer externen Chart-Bibliothek (kein zusätzliches
+    Abhängigkeits-Gewicht für QtCharts/matplotlib)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._daten = []
+        self.setMinimumHeight(140)
+
+    def set_daten(self, daten: list):
+        self._daten = daten
+        self.update()
+
+    def paintEvent(self, _event):
+        from PyQt5.QtGui import QPainter, QColor
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        if not self._daten:
+            painter.setPen(QColor("gray"))
+            painter.drawText(self.rect(), Qt.AlignCenter, "Keine Daten für das Diagramm vorhanden (Eintrittsdatum fehlt bei allen Mitgliedern).")
+            return
+
+        breite = self.width()
+        hoehe = self.height()
+        rand_unten = 24
+        rand_oben = 18
+        anzahl_balken = len(self._daten)
+        max_wert = max(anzahl for _, anzahl in self._daten) or 1
+        balken_platz = breite / anzahl_balken
+        balken_breite = max(balken_platz - 6, 2)
+
+        painter.setPen(QColor("black"))
+        for i, (jahr, anzahl) in enumerate(self._daten):
+            verfuegbare_hoehe = hoehe - rand_unten - rand_oben
+            balken_hoehe = verfuegbare_hoehe * (anzahl / max_wert) if max_wert else 0
+            x = i * balken_platz + (balken_platz - balken_breite) / 2
+            y = hoehe - rand_unten - balken_hoehe
+
+            painter.setBrush(QColor("#2a6ebb"))
+            painter.setPen(Qt.NoPen)
+            painter.drawRect(int(x), int(y), int(balken_breite), int(balken_hoehe))
+
+            painter.setPen(QColor("black"))
+            painter.drawText(int(x) - 6, int(y) - 4, int(balken_breite) + 12, 14, Qt.AlignCenter, str(anzahl))
+            # Nur jede n-te Jahreszahl beschriften, wenn zu viele Balken für lesbaren Platz da sind
+            beschriftungs_schritt = max(1, anzahl_balken // 12)
+            if i % beschriftungs_schritt == 0:
+                painter.drawText(int(x) - 10, hoehe - rand_unten + 2, int(balken_breite) + 20, 16, Qt.AlignCenter, str(jahr))
+
+
 class UebersichtPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
@@ -909,6 +971,12 @@ class UebersichtPage(QWidget):
         jub_layout.addWidget(self.jubilaeen_list)
         anstehend_layout.addWidget(jub_box)
         layout.addLayout(anstehend_layout)
+
+        entwicklung_box = QGroupBox("Mitgliederentwicklung (aktive Mitglieder je Jahresende)")
+        entwicklung_layout = QVBoxLayout(entwicklung_box)
+        self.entwicklung_widget = MitgliederEntwicklungWidget()
+        entwicklung_layout.addWidget(self.entwicklung_widget)
+        layout.addWidget(entwicklung_box)
 
         filter_layout = QHBoxLayout()
         self.status_filter = QComboBox()
@@ -964,6 +1032,22 @@ class UebersichtPage(QWidget):
         btn_layout.addWidget(self.excel_export_btn)
         btn_layout.addWidget(self.pdf_export_btn)
         layout.addLayout(btn_layout)
+
+        # --- Sammelaktionen (Mehrfachauswahl in der Tabelle: Strg-/Umschalt-Klick) ---
+        sammel_layout = QHBoxLayout()
+        sammel_layout.addWidget(QLabel("Sammelaktionen (mehrere Zeilen mit Strg/Umschalt auswählen):"))
+        self.sammel_status_combo = QComboBox()
+        self.sammel_status_combo.addItems(mitglieder.STATUS_OPTIONEN)
+        self.sammel_status_setzen_btn = QPushButton("Status setzen für Auswahl")
+        self.sammel_status_setzen_btn.clicked.connect(self._sammel_status_setzen)
+        self.sammel_loeschen_btn = QPushButton("Ausgewählte löschen")
+        self.sammel_loeschen_btn.setStyleSheet("color: darkred;")
+        self.sammel_loeschen_btn.clicked.connect(self._sammel_loeschen)
+        sammel_layout.addWidget(self.sammel_status_combo)
+        sammel_layout.addWidget(self.sammel_status_setzen_btn)
+        sammel_layout.addStretch(1)
+        sammel_layout.addWidget(self.sammel_loeschen_btn)
+        layout.addLayout(sammel_layout)
 
     def _spalten_sichtbarkeit_anwenden(self):
         ausgeblendet = adapter.load_ausgeblendete_spalten()
@@ -1025,6 +1109,8 @@ class UebersichtPage(QWidget):
             for _, zeile in jub_df.iterrows():
                 self.jubilaeen_list.addItem(f"{zeile['Name']} — {zeile['Jahre dabei']} Jahre dabei")
 
+        self.entwicklung_widget.set_daten(adapter.mitgliederzahl_je_jahr(df_gesamt))
+
         gefiltert = self._gefiltertes_df().reset_index(drop=True)
         self._gefiltert_ids = gefiltert["ID"].tolist()
         self.table.setSortingEnabled(False)
@@ -1053,6 +1139,62 @@ class UebersichtPage(QWidget):
         if treffer.empty:
             return None
         return treffer.iloc[0]["ID"]
+
+    def _selected_member_ids(self) -> list[str]:
+        """Mehrfachauswahl (Strg-/Umschalt-Klick) für Sammelaktionen."""
+        df = mitglieder.load_data()
+        vorname_idx = self.anzeige_spalten.index("Vorname")
+        nachname_idx = self.anzeige_spalten.index("Nachname")
+        nummer_idx = self.anzeige_spalten.index("Mitgliedsnummer")
+        ids = []
+        for index in self.table.selectionModel().selectedRows():
+            row = index.row()
+            vorname = self.table.item(row, vorname_idx).text()
+            nachname = self.table.item(row, nachname_idx).text()
+            nummer = self.table.item(row, nummer_idx).text()
+            treffer = df[(df["Vorname"] == vorname) & (df["Nachname"] == nachname) & (df["Mitgliedsnummer"] == nummer)]
+            if not treffer.empty:
+                ids.append(treffer.iloc[0]["ID"])
+        return ids
+
+    def _sammel_status_setzen(self):
+        ids = self._selected_member_ids()
+        if not ids:
+            QMessageBox.information(self, "Auswahl fehlt", "Bitte mindestens ein Mitglied auswählen (Strg-/Umschalt-Klick für mehrere).")
+            return
+        neuer_status = self.sammel_status_combo.currentText()
+        antwort = QMessageBox.question(
+            self, "Status setzen bestätigen",
+            f"Status von {len(ids)} Mitglied(ern) auf \"{neuer_status}\" setzen?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if antwort != QMessageBox.Yes:
+            return
+        df = mitglieder.load_data()
+        for mitglied_id in ids:
+            df = mitglieder.update_member(df, mitglied_id, {"Mitgliedsstatus": neuer_status})
+        mitglieder.save_data(df)
+        self.refresh_table()
+        QMessageBox.information(self, "Erfolg", f"Status von {len(ids)} Mitglied(ern) aktualisiert.")
+
+    def _sammel_loeschen(self):
+        ids = self._selected_member_ids()
+        if not ids:
+            QMessageBox.information(self, "Auswahl fehlt", "Bitte mindestens ein Mitglied auswählen (Strg-/Umschalt-Klick für mehrere).")
+            return
+        antwort = QMessageBox.question(
+            self, "Löschen bestätigen",
+            f"Wirklich {len(ids)} Mitglied(er) inkl. Foto und Anhängen endgültig löschen?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if antwort != QMessageBox.Yes:
+            return
+        df = mitglieder.load_data()
+        for mitglied_id in ids:
+            df = mitglieder.delete_member(df, mitglied_id)
+        mitglieder.save_data(df)
+        self.refresh_table()
+        QMessageBox.information(self, "Erfolg", f"{len(ids)} Mitglied(er) gelöscht.")
 
     def _einzelklick_verzoegert(self, _item):
         self._klick_timer.stop()
