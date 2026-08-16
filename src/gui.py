@@ -59,7 +59,7 @@ COLUMNS = mitglieder.COLUMNS
 
 # Wird bei jedem Fix erhöht: kleine Fixes -> Nachkommastelle (1.00 -> 1.01),
 # größere/strukturelle Änderungen -> Vorkommastelle (1.05 -> 2.00, Nachkommastelle zurück auf 00).
-VERSION = "1.03"
+VERSION = "1.04"
 
 
 # ---------------------------------------------------------------------------
@@ -1039,7 +1039,7 @@ class ExcelImportDialog(QDialog):
             if combo.currentText() != self.KEINE_ZUORDNUNG
         }
 
-    def _zeile_zu_data(self, zeile, zuordnung: dict) -> dict:
+    def _zeile_zu_data(self, zeile, zuordnung: dict, status_default: bool = True) -> dict:
         data = {feld: "" for feld in mitglieder.COLUMNS if feld != "ID"}
         for feld, spalte in zuordnung.items():
             wert = str(zeile.get(spalte, "") or "").strip()
@@ -1049,7 +1049,7 @@ class ExcelImportDialog(QDialog):
                 # im erwarteten reinen YYYY-MM-DD-Format).
                 wert = mitglieder._normalisiere_importiertes_datum(wert)
             data[feld] = wert
-        if not data["Mitgliedsstatus"]:
+        if status_default and not data["Mitgliedsstatus"]:
             data["Mitgliedsstatus"] = "aktiv"
         return data
 
@@ -1076,15 +1076,29 @@ class ExcelImportDialog(QDialog):
             QMessageBox.warning(self, "Zuordnung unvollständig", "Bitte mindestens Vorname und Nachname zuordnen.")
             return
 
+        # Bewusst KEINE validate_member()-Prüfung hier: beim Import einer
+        # bestehenden (oft unvollständigen) Vereinsliste sollen fehlende
+        # Pflichtfelder (z. B. keine E-Mail hinterlegt) den Import nicht
+        # verhindern - die Datensätze lassen sich später einzeln über den
+        # Bearbeiten-Dialog vervollständigen. Nur IBAN wird bei gültigem
+        # Format normalisiert (rein kosmetisch, blockiert nichts bei
+        # ungültigem Format). Komplett leere Zeilen werden übersprungen.
         laufender_df = mitglieder.load_data()
         erfolgreich = 0
-        fehlermeldungen = []
-        for zeilennummer, (_, zeile) in enumerate(self._roh_df.iterrows()):
-            data = self._zeile_zu_data(zeile, zuordnung)
-            fehler = mitglieder.validate_member(data, laufender_df)
-            if fehler:
-                fehlermeldungen.append(f"Zeile {zeilennummer + 2}: " + "; ".join(fehler))
+        leere_zeilen_uebersprungen = 0
+        for _, zeile in self._roh_df.iterrows():
+            # Leerzeilen-Prüfung ohne den Status-Default, sonst wäre wegen
+            # "Mitgliedsstatus": "aktiv" nie eine Zeile als leer erkennbar.
+            roh_data = self._zeile_zu_data(zeile, zuordnung, status_default=False)
+            if not any(roh_data.values()):
+                leere_zeilen_uebersprungen += 1
                 continue
+            data = dict(roh_data)
+            if not data["Mitgliedsstatus"]:
+                data["Mitgliedsstatus"] = "aktiv"
+            iban = data.get("IBAN", "")
+            if iban and mitglieder.is_valid_iban(iban):
+                data["IBAN"] = mitglieder.normalize_iban(iban)
             laufender_df = mitglieder.add_member(laufender_df, data)
             erfolgreich += 1
 
@@ -1092,10 +1106,10 @@ class ExcelImportDialog(QDialog):
             mitglieder.save_data(laufender_df)
             self.main_window.uebersicht_page.refresh_table()
 
-        meldung = [f"{erfolgreich} Mitglied(er) erfolgreich importiert."]
-        if fehlermeldungen:
-            meldung.append(f"{len(fehlermeldungen)} Zeile(n) übersprungen:\n" + "\n".join(fehlermeldungen))
-        QMessageBox.information(self, "Import abgeschlossen", "\n\n".join(meldung))
+        meldung = f"{erfolgreich} Mitglied(er) erfolgreich importiert."
+        if leere_zeilen_uebersprungen:
+            meldung += f"\n{leere_zeilen_uebersprungen} komplett leere Zeile(n) übersprungen."
+        QMessageBox.information(self, "Import abgeschlossen", meldung)
 
 
 class NeuesMitgliedPage(QWidget):
