@@ -59,7 +59,7 @@ COLUMNS = mitglieder.COLUMNS
 
 # Wird bei jedem Fix erhöht: kleine Fixes -> Nachkommastelle (1.00 -> 1.01),
 # größere/strukturelle Änderungen -> Vorkommastelle (1.05 -> 2.00, Nachkommastelle zurück auf 00).
-VERSION = "1.02"
+VERSION = "1.03"
 
 
 # ---------------------------------------------------------------------------
@@ -936,6 +936,168 @@ class UebersichtPage(QWidget):
 # ---------------------------------------------------------------------------
 # Neues Mitglied
 # ---------------------------------------------------------------------------
+class ExcelImportDialog(QDialog):
+    """Mitglieder aus einer beliebigen Excel-Datei importieren, mit freier
+    Zuordnung der Datei-Spalten zu den internen Feldern (statt einer fest
+    erwarteten Kopfzeile wie beim einfachen Web-App-Import)."""
+
+    DATUMSFELDER = {
+        "Geburtstag", "Eintrittsdatum", "Austrittsdatum", "Einwilligung_Datum",
+        "Letzte_Zahlung", "SEPA_Mandatsdatum",
+    }
+    KEINE_ZUORDNUNG = "— nicht zuordnen —"
+
+    def __init__(self, parent, main_window):
+        super().__init__(parent)
+        self.main_window = main_window
+        self.setWindowTitle("Mitglieder aus Excel importieren")
+        self.resize(750, 650)
+        self._roh_df = None
+
+        outer = QVBoxLayout(self)
+
+        info = QLabel(
+            "Beliebige Excel-Datei auswählen und danach jede Spalte der Datei "
+            "einem internen Feld zuordnen. Nicht zugeordnete Felder bleiben leer."
+        )
+        info.setWordWrap(True)
+        outer.addWidget(info)
+
+        datei_row = QHBoxLayout()
+        self.datei_label = QLabel("Keine Datei ausgewählt")
+        datei_waehlen_btn = QPushButton("Excel-Datei auswählen...")
+        datei_waehlen_btn.clicked.connect(self._datei_auswaehlen)
+        datei_row.addWidget(self.datei_label, stretch=1)
+        datei_row.addWidget(datei_waehlen_btn)
+        outer.addLayout(datei_row)
+
+        zuordnung_box = QGroupBox("Spaltenzuordnung")
+        zuordnung_form = QFormLayout(zuordnung_box)
+        self._zuordnung_combos = {}
+        for feld in [c for c in mitglieder.COLUMNS if c != "ID"]:
+            combo = QComboBox()
+            combo.addItem(self.KEINE_ZUORDNUNG)
+            combo.currentTextChanged.connect(self._vorschau_aktualisieren)
+            zuordnung_form.addRow(f"{feld}:", combo)
+            self._zuordnung_combos[feld] = combo
+        zuordnung_scroll = QScrollArea()
+        zuordnung_scroll.setWidgetResizable(True)
+        zuordnung_scroll.setWidget(zuordnung_box)
+        outer.addWidget(zuordnung_scroll, stretch=1)
+
+        outer.addWidget(QLabel("Vorschau (erste 5 Zeilen nach aktueller Zuordnung):"))
+        self.vorschau_table = QTableWidget()
+        self.vorschau_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.vorschau_table.setMaximumHeight(150)
+        outer.addWidget(self.vorschau_table)
+
+        btn_row = QHBoxLayout()
+        self.import_btn = QPushButton("Import ausführen")
+        self.import_btn.setEnabled(False)
+        self.import_btn.clicked.connect(self._importieren)
+        schliessen_btn = QPushButton("Schließen")
+        schliessen_btn.clicked.connect(self.accept)
+        btn_row.addWidget(self.import_btn)
+        btn_row.addStretch(1)
+        btn_row.addWidget(schliessen_btn)
+        outer.addLayout(btn_row)
+
+    def _datei_auswaehlen(self):
+        pfad, _ = QFileDialog.getOpenFileName(self, "Excel-Datei auswählen", "", "Excel-Dateien (*.xlsx)")
+        if not pfad:
+            return
+        import pandas as pd
+
+        try:
+            self._roh_df = pd.read_excel(pfad, dtype=str, keep_default_na=False, engine="openpyxl")
+        except Exception as exc:
+            QMessageBox.critical(self, "Fehler", f"Datei konnte nicht gelesen werden:\n{exc}")
+            return
+
+        self.datei_label.setText(Path(pfad).name)
+        spalten_der_datei = list(self._roh_df.columns)
+
+        for feld, combo in self._zuordnung_combos.items():
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem(self.KEINE_ZUORDNUNG)
+            combo.addItems(spalten_der_datei)
+            # Automatischer Vorschlag bei exakter (case-insensitiver) Namensübereinstimmung
+            treffer = next((s for s in spalten_der_datei if s.strip().lower() == feld.strip().lower()), None)
+            if treffer:
+                combo.setCurrentText(treffer)
+            combo.blockSignals(False)
+
+        self.import_btn.setEnabled(True)
+        self._vorschau_aktualisieren()
+
+    def _aktuelle_zuordnung(self) -> dict:
+        """Feld -> Spaltenname der Datei, nur tatsächlich zugeordnete Felder."""
+        return {
+            feld: combo.currentText()
+            for feld, combo in self._zuordnung_combos.items()
+            if combo.currentText() != self.KEINE_ZUORDNUNG
+        }
+
+    def _zeile_zu_data(self, zeile, zuordnung: dict) -> dict:
+        data = {feld: "" for feld in mitglieder.COLUMNS if feld != "ID"}
+        for feld, spalte in zuordnung.items():
+            wert = str(zeile.get(spalte, "") or "").strip()
+            if feld in self.DATUMSFELDER:
+                # mitglieder.py-interne Normalisierung wiederverwendet (Excel-
+                # Datumszellen kommen oft als "2020-01-15 00:00:00" an statt
+                # im erwarteten reinen YYYY-MM-DD-Format).
+                wert = mitglieder._normalisiere_importiertes_datum(wert)
+            data[feld] = wert
+        if not data["Mitgliedsstatus"]:
+            data["Mitgliedsstatus"] = "aktiv"
+        return data
+
+    def _vorschau_aktualisieren(self, *_args):
+        if self._roh_df is None:
+            return
+        zuordnung = self._aktuelle_zuordnung()
+        felder = list(zuordnung.keys())
+        vorschau_zeilen = self._roh_df.head(5)
+        self.vorschau_table.setColumnCount(len(felder))
+        self.vorschau_table.setHorizontalHeaderLabels(felder)
+        self.vorschau_table.setRowCount(len(vorschau_zeilen))
+        for row, (_, zeile) in enumerate(vorschau_zeilen.iterrows()):
+            data = self._zeile_zu_data(zeile, zuordnung)
+            for col, feld in enumerate(felder):
+                self.vorschau_table.setItem(row, col, QTableWidgetItem(data.get(feld, "")))
+        self.vorschau_table.resizeColumnsToContents()
+
+    def _importieren(self):
+        if self._roh_df is None:
+            return
+        zuordnung = self._aktuelle_zuordnung()
+        if "Vorname" not in zuordnung or "Nachname" not in zuordnung:
+            QMessageBox.warning(self, "Zuordnung unvollständig", "Bitte mindestens Vorname und Nachname zuordnen.")
+            return
+
+        laufender_df = mitglieder.load_data()
+        erfolgreich = 0
+        fehlermeldungen = []
+        for zeilennummer, (_, zeile) in enumerate(self._roh_df.iterrows()):
+            data = self._zeile_zu_data(zeile, zuordnung)
+            fehler = mitglieder.validate_member(data, laufender_df)
+            if fehler:
+                fehlermeldungen.append(f"Zeile {zeilennummer + 2}: " + "; ".join(fehler))
+                continue
+            laufender_df = mitglieder.add_member(laufender_df, data)
+            erfolgreich += 1
+
+        if erfolgreich:
+            mitglieder.save_data(laufender_df)
+            self.main_window.uebersicht_page.refresh_table()
+
+        meldung = [f"{erfolgreich} Mitglied(er) erfolgreich importiert."]
+        if fehlermeldungen:
+            meldung.append(f"{len(fehlermeldungen)} Zeile(n) übersprungen:\n" + "\n".join(fehlermeldungen))
+        QMessageBox.information(self, "Import abgeschlossen", "\n\n".join(meldung))
+
+
 class NeuesMitgliedPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
@@ -975,6 +1137,17 @@ class NeuesMitgliedPage(QWidget):
         self.hinzufuegen_btn = QPushButton("Mitglied hinzufügen")
         self.hinzufuegen_btn.clicked.connect(self._hinzufuegen)
         outer.addWidget(self.hinzufuegen_btn)
+
+        excel_import_box = QGroupBox("Mehrere Mitglieder aus Excel importieren (optional)")
+        excel_import_layout = QVBoxLayout(excel_import_box)
+        excel_import_btn = QPushButton("Mitglieder aus Excel importieren...")
+        excel_import_btn.clicked.connect(self._excel_import_oeffnen)
+        excel_import_layout.addWidget(excel_import_btn)
+        content_layout.addWidget(excel_import_box)
+
+    def _excel_import_oeffnen(self):
+        dlg = ExcelImportDialog(self, self.main_window)
+        dlg.exec_()
 
     def _foto_auswaehlen(self):
         pfad, _ = QFileDialog.getOpenFileName(self, "Foto auswählen", "", "Bilder (*.jpg *.jpeg *.png)")
