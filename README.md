@@ -108,6 +108,17 @@ Kassierer-E-Mail-Adresse im selben Dialog eintragen.
 
 ## 🛠️ Build der `.exe` (für Verteilung)
 
+### Schnellweg: `update_und_bauen.bat`
+
+Im Repo-Ordner liegt [`update_und_bauen.bat`](update_und_bauen.bat) — einfach
+per Doppelklick starten. Sie holt den neuesten Stand von GitHub
+(`git pull`), installiert/aktualisiert die Abhängigkeiten und baut danach die
+`.exe` neu, alles in einem Rutsch. Bei einem Fehler (z. B. `git pull`
+schlägt wegen lokaler Änderungen fehl) bricht das Skript mit einer
+Fehlermeldung ab, statt einfach weiterzumachen.
+
+### Manuell, Schritt für Schritt
+
 PyInstaller ist bereits Teil von `requirements.txt` (Schritt 3 oben) und muss
 nicht separat installiert werden. Im Repo-Root ausführen:
 
