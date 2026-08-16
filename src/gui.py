@@ -59,7 +59,7 @@ COLUMNS = mitglieder.COLUMNS
 
 # Wird bei jedem Fix erhöht: kleine Fixes -> Nachkommastelle (1.00 -> 1.01),
 # größere/strukturelle Änderungen -> Vorkommastelle (1.05 -> 2.00, Nachkommastelle zurück auf 00).
-VERSION = "1.01"
+VERSION = "1.02"
 
 
 # ---------------------------------------------------------------------------
@@ -1200,14 +1200,55 @@ class SmtpSettingsDialog(QDialog):
         button_box.rejected.connect(self.reject)
         layout.addRow(button_box)
 
+    @staticmethod
+    def _verbindung_testen(host: str, port: str, user: str, passwort: str) -> tuple[bool, str]:
+        """Prüft, ob mit den eingegebenen Zugangsdaten ein SMTP-Login
+        gelingt, ohne eine E-Mail zu versenden. Gleiche Port-465-vs-STARTTLS-
+        Logik wie mailer.send_mail()."""
+        import smtplib
+
+        try:
+            port_int = int(port)
+            if port_int == 465:
+                with smtplib.SMTP_SSL(host, port_int, timeout=10) as server:
+                    server.login(user, passwort)
+            else:
+                with smtplib.SMTP(host, port_int, timeout=10) as server:
+                    server.starttls()
+                    server.login(user, passwort)
+            return True, ""
+        except Exception as exc:
+            return False, str(exc)
+
     def _speichern(self):
+        host = self.host_edit.text().strip()
+        port = self.port_edit.text().strip()
+        user = self.user_edit.text().strip()
+        passwort = self.passwort_edit.text()
+        absender = self.absender_edit.text().strip()
+        kassierer = self.kassierer_edit.text().strip()
+
+        if host and port and user and passwort:
+            erfolgreich, fehler = self._verbindung_testen(host, port, user, passwort)
+            if erfolgreich:
+                QMessageBox.information(self, "Verbindung erfolgreich", "Die SMTP-Verbindung wurde erfolgreich getestet.")
+            else:
+                antwort = QMessageBox.warning(
+                    self, "Verbindungstest fehlgeschlagen",
+                    f"Die SMTP-Verbindung konnte nicht hergestellt werden:\n{fehler}\n\n"
+                    f"Trotzdem speichern? (z. B. falls gerade kein Internet verfügbar ist)",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+                )
+                if antwort != QMessageBox.Yes:
+                    return
+
         adapter.save_smtp_config({
-            "host": self.host_edit.text().strip(),
-            "port": self.port_edit.text().strip(),
-            "user": self.user_edit.text().strip(),
-            "passwort": self.passwort_edit.text(),
-            "absender": self.absender_edit.text().strip(),
-            "kassierer_email": self.kassierer_edit.text().strip(),
+            "host": host,
+            "port": port,
+            "user": user,
+            "passwort": passwort,
+            "absender": absender,
+            "kassierer_email": kassierer,
         })
         self.accept()
 
@@ -1527,6 +1568,10 @@ class MainWindow(QMainWindow):
         version_label = QLabel(f"v{VERSION}")
         version_label.setStyleSheet("color: gray; padding: 4px;")
         sidebar_layout.addWidget(version_label)
+
+        autor_label = QLabel("by Dirk Heerstraß")
+        autor_label.setStyleSheet("color: gray; padding: 0 4px 4px 4px; font-size: 10px;")
+        sidebar_layout.addWidget(autor_label)
 
         update_check_btn = QPushButton("Nach Updates suchen")
         update_check_btn.setStyleSheet("padding: 2px;")

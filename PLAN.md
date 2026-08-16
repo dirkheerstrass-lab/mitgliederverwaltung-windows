@@ -25,6 +25,8 @@ ohne beide Repos neu abzugleichen.
 - [x] **Update-Check-Button** (v1.01): vergleicht lokale `VERSION` gegen `src/gui.py` auf `main` im GitHub-Repo (jetzt öffentlich, daher ohne Auth per `raw.githubusercontent.com` abrufbar)
 - [x] **Spalten in der Übersichtstabelle ein-/ausblenden** (v1.01): `SpaltenAuswahlDialog`, Auswahl persistiert in `%APPDATA%\Mitgliederverwaltung\spalten_config.json`
 - [x] **Suche über mehr Felder** (v1.01): zusätzlich zu Vorname/Nachname jetzt auch Mitgliedsnummer, Stadt, Telefon
+- [x] **"by Dirk Heerstraß" unter der Versionsnummer** (v1.02): Label in der Seitenleiste
+- [x] **SMTP-Verbindungstest beim Speichern** (v1.02): `SmtpSettingsDialog` testet vor dem Speichern per `smtplib`-Login, ob die Zugangsdaten funktionieren; bei Fehlschlag Rückfrage "Trotzdem speichern?" statt Blockade
 
 ## Backlog / noch nicht portiert
 
@@ -48,8 +50,6 @@ ohne beide Repos neu abzugleichen.
   Personen sollen künftig gleichzeitig live arbeiten), diese Entscheidung neu
   bewerten.
 - [ ] Richtiger Installer/Setup.exe (z. B. Inno Setup oder NSIS), der den `dist/Mitgliederverwaltung/`-Ordner für Endnutzer verpackt/installiert. Der Build ist bewusst als "onedir" mit vielen losen Dateien in `_internal/` gehalten (schnellerer Start als eine kompakt gepackte `.exe`) — ein Installer soll das später für Endnutzer unsichtbar machen.
-- [ ] SMTP-Einstellungen (`SmtpSettingsDialog`, `src/gui.py`): beim Speichern einmal die Verbindung testen (z. B. `smtplib`-Login mit den eingegebenen Zugangsdaten versuchen), statt Fehler erst beim nächsten Serienmail-/Beitragsmahnung-Versand zu bemerken. Bei Fehlschlag Meldung anzeigen, Speichern aber trotzdem erlauben (falls z. B. gerade kein Internet verfügbar ist).
-- [ ] Unter der Versionsnummer in der Seitenleiste (`version_label`, `src/gui.py`, `MainWindow.__init__`) zusätzlich „by Dirk Heerstraß“ anzeigen.
 - [ ] **Automatisches Start-Backup (zeitgesteuert)**: bisher gibt es nur ein "automatisches" Backup als Sicherheitsnetz unmittelbar vor einem manuellen Restore (`vor_restore_*.zip`) — kein periodisches Backup, das von selbst ohne Zutun entsteht. Gewünscht: bei jedem App-Start automatisch ein Backup anlegen, höchstens einmal pro Kalendertag (verhindert Spam bei mehrfachem Neustart am selben Tag). Design:
   - Auslöser: nach erfolgreichem Login, vor `window.show()` in `src/main.py`. Kein Hintergrund-Scheduler nötig, App läuft nur bei aktiver Nutzung.
   - Speicherort: `mitglieder.BACKUPS_DIR` (wie Restore-Sicherheitsbackups), aber eigenes Dateinamens-Präfix `auto_start_JJJJMMTT_HHMMSS.zip`, damit sich beide Arten nicht gegenseitig bei der Aufräumlogik beeinflussen.
