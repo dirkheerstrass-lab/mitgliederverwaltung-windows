@@ -16,7 +16,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 
 from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtWidgets import (
@@ -59,7 +59,7 @@ COLUMNS = mitglieder.COLUMNS
 
 # Wird bei jedem Fix erhöht: kleine Fixes -> Nachkommastelle (1.00 -> 1.01),
 # größere/strukturelle Änderungen -> Vorkommastelle (1.05 -> 2.00, Nachkommastelle zurück auf 00).
-VERSION = "1.07"
+VERSION = "1.08"
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +74,49 @@ def _iso_to_qdate(iso_text: str) -> QDate | None:
 
 def _qdate_to_iso(qdate: QDate) -> str:
     return date(qdate.year(), qdate.month(), qdate.day()).isoformat()
+
+
+# Felder, deren Werte intern als ISO-Datum (YYYY-MM-DD) gespeichert sind,
+# aber in Tabellen/Listen als dd.mm.jjjj angezeigt werden sollen.
+# "Faelligkeitsdatum" ist kein echtes mitglieder.py-Feld, sondern eine von
+# BeitragsmahnungPage berechnete Anzeigespalte - gehört aber ebenfalls hierher.
+DATUMSFELDER = {
+    "Geburtstag", "Eintrittsdatum", "Austrittsdatum", "Einwilligung_Datum",
+    "Letzte_Zahlung", "SEPA_Mandatsdatum", "Faelligkeitsdatum",
+}
+
+
+def _format_datum_anzeige(iso_text: str) -> str:
+    """Wandelt ein ISO-Datum für die Anzeige in dd.mm.jjjj um. Leere/nicht
+    parsebare Werte werden unverändert zurückgegeben."""
+    qd = _iso_to_qdate(iso_text)
+    if qd is None:
+        return iso_text
+    return qd.toString("dd.MM.yyyy")
+
+
+def _format_zeitstempel_anzeige(iso_zeitstempel: str) -> str:
+    """Wandelt einen ISO-Zeitstempel (datetime.isoformat()) für die Anzeige
+    in dd.mm.jjjj HH:MM um. Leere/nicht parsebare Werte bleiben unverändert."""
+    try:
+        return datetime.fromisoformat(iso_zeitstempel).strftime("%d.%m.%Y %H:%M")
+    except (TypeError, ValueError):
+        return iso_zeitstempel
+
+
+class DatumTableWidgetItem(QTableWidgetItem):
+    """QTableWidgetItem für Datumsspalten: zeigt dd.mm.jjjj an, sortiert aber
+    weiterhin nach dem rohen ISO-Wert (der lexikografisch bereits chronologisch
+    sortiert), statt alphabetisch nach dem angezeigten Text."""
+
+    def __init__(self, anzeige_text: str, sortier_wert: str):
+        super().__init__(anzeige_text)
+        self._sortier_wert = sortier_wert
+
+    def __lt__(self, other):
+        if isinstance(other, DatumTableWidgetItem):
+            return self._sortier_wert < other._sortier_wert
+        return super().__lt__(other)
 
 
 class OptionalDateEdit(QWidget):
@@ -103,6 +146,10 @@ class OptionalDateEdit(QWidget):
         else:
             self.date_edit.setDate(qd)
             self.empty_check.setChecked(False)
+        # setChecked() oben löst toggled() ggf. nicht aus, wenn set_data()
+        # das Signal währenddessen blockiert (siehe MemberFormWidget.set_data) -
+        # daher den Aktivierungsstatus hier unabhängig vom Signal sicherstellen.
+        self.date_edit.setEnabled(not self.empty_check.isChecked())
 
     def get_iso(self) -> str:
         if self.empty_check.isChecked():
@@ -216,6 +263,7 @@ class MemberFormWidget(QWidget):
         self.status = QComboBox()
         self.status.addItems(mitglieder.STATUS_OPTIONEN)
         mitgliedschaft_layout.addRow("Mitgliedsstatus *:", self.status)
+        self.austrittsdatum.empty_check.toggled.connect(self._austritt_status_vorschlagen)
         outer.addWidget(mitgliedschaft_box)
 
         status_box = QGroupBox("Gruppen")
@@ -289,6 +337,16 @@ class MemberFormWidget(QWidget):
     def _mitgliedsnummer_vorschlagen(self):
         self.mitgliedsnummer.setText(adapter.naechste_freie_mitgliedsnummer(mitglieder.load_data()))
 
+    def _austritt_status_vorschlagen(self, checked: bool):
+        # checked=True bedeutet "kein Datum" - hier interessiert nur der
+        # umgekehrte Fall, dass gerade ein Austrittsdatum gesetzt wurde.
+        # Während set_data() das Formular vorbelegt, ist dieses Signal
+        # blockiert, damit ein bereits vorhandener, abweichender Status
+        # (z. B. "gekündigt") beim Öffnen des Bearbeiten-Dialogs nicht
+        # überschrieben wird - siehe MemberFormWidget.set_data().
+        if not checked:
+            self.status.setCurrentText("ausgetreten")
+
     def _update_naechste_faellig(self, *_args):
         naechste = mitglieder.compute_next_due(self.letzte_zahlung.get_iso(), self.zahlungsrhythmus.currentText())
         if naechste:
@@ -352,7 +410,9 @@ class MemberFormWidget(QWidget):
         self.geburtstag.set_iso(member.get("Geburtstag", ""))
         eintritt = _iso_to_qdate(member.get("Eintrittsdatum", ""))
         self.eintrittsdatum.setDate(eintritt or QDate.currentDate())
+        self.austrittsdatum.empty_check.blockSignals(True)
         self.austrittsdatum.set_iso(member.get("Austrittsdatum", ""))
+        self.austrittsdatum.empty_check.blockSignals(False)
 
         vorhandene_gruppen = [g.strip() for g in member.get("Gruppen", "").split(";") if g.strip()]
         for i in range(self.gruppen_list.count()):
@@ -732,7 +792,8 @@ class MemberEditDialog(QDialog):
             return
         for eintrag in eintraege:
             symbol = "✔" if eintrag.get("erfolgreich") else "✘"
-            text = f"{symbol} {eintrag.get('betreff', '')} — {eintrag.get('zeitstempel', '')}"
+            zeitstempel = _format_zeitstempel_anzeige(eintrag.get("zeitstempel", ""))
+            text = f"{symbol} {eintrag.get('betreff', '')} — {zeitstempel}"
             if not eintrag.get("erfolgreich") and eintrag.get("fehler"):
                 text += f" (Fehler: {eintrag['fehler']})"
             self.mail_list.addItem(text)
@@ -744,8 +805,9 @@ class MemberEditDialog(QDialog):
             self.zahlungsverlauf_list.addItem("Noch keine Zahlung erfasst.")
             return
         for eintrag in eintraege:
+            datum = _format_datum_anzeige(eintrag.get("datum", ""))
             text = (
-                f"{eintrag.get('datum', '')} — {eintrag.get('betrag', '')} € "
+                f"{datum} — {eintrag.get('betrag', '')} € "
                 f"({eintrag.get('zahlungsart', '')})"
             )
             if eintrag.get("notiz"):
@@ -836,6 +898,12 @@ class MemberEditDialog(QDialog):
         df = mitglieder.load_data()
         data = self.form.get_data()
         fehler = mitglieder.validate_member(data, df, editing_id=self.mitglied_id)
+        if not data.get("E-Mail", "").strip():
+            # Beim Bearbeiten darf die E-Mail leer bleiben (z. B. ältere
+            # Mitglieder ohne hinterlegte Adresse) - nur bei "Neues Mitglied"
+            # bleibt sie Pflicht. mitglieder.validate_member() ist eine
+            # geteilte Kopie aus der Web-App und bleibt dort unverändert.
+            fehler = [f for f in fehler if f != "E-Mail darf nicht leer sein."]
         if fehler:
             QMessageBox.warning(self, "Eingabefehler", "\n".join(f"- {f}" for f in fehler))
             return
@@ -946,6 +1014,26 @@ class MitgliederEntwicklungWidget(QWidget):
                 painter.drawText(int(x) - 10, hoehe - rand_unten + 2, int(balken_breite) + 20, 16, Qt.AlignCenter, str(jahr))
 
 
+class MitgliederEntwicklungPage(QWidget):
+    """Eigene Seitenleisten-Seite für das Mitgliederentwicklungs-Diagramm
+    (vorher in UebersichtPage eingebettet)."""
+
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+        layout = QVBoxLayout(self)
+
+        entwicklung_box = QGroupBox("Mitgliederentwicklung (aktive Mitglieder je Jahresende)")
+        entwicklung_layout = QVBoxLayout(entwicklung_box)
+        self.entwicklung_widget = MitgliederEntwicklungWidget()
+        entwicklung_layout.addWidget(self.entwicklung_widget)
+        layout.addWidget(entwicklung_box)
+
+    def refresh(self):
+        df_gesamt = mitglieder.load_data()
+        self.entwicklung_widget.set_daten(adapter.mitgliederzahl_je_jahr(df_gesamt))
+
+
 class UebersichtPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
@@ -965,18 +1053,12 @@ class UebersichtPage(QWidget):
         geb_layout.addWidget(self.geburtstage_list)
         anstehend_layout.addWidget(geb_box)
 
-        jub_box = QGroupBox("Mitgliedschaftsjubiläen (dieses Jahr)")
-        jub_layout = QVBoxLayout(jub_box)
-        self.jubilaeen_list = QListWidget()
-        jub_layout.addWidget(self.jubilaeen_list)
-        anstehend_layout.addWidget(jub_box)
+        faellig_box = QGroupBox("Nächste Zahlung fällig")
+        faellig_layout = QVBoxLayout(faellig_box)
+        self.naechste_zahlungen_list = QListWidget()
+        faellig_layout.addWidget(self.naechste_zahlungen_list)
+        anstehend_layout.addWidget(faellig_box)
         layout.addLayout(anstehend_layout)
-
-        entwicklung_box = QGroupBox("Mitgliederentwicklung (aktive Mitglieder je Jahresende)")
-        entwicklung_layout = QVBoxLayout(entwicklung_box)
-        self.entwicklung_widget = MitgliederEntwicklungWidget()
-        entwicklung_layout.addWidget(self.entwicklung_widget)
-        layout.addWidget(entwicklung_box)
 
         filter_layout = QHBoxLayout()
         self.status_filter = QComboBox()
@@ -1101,15 +1183,20 @@ class UebersichtPage(QWidget):
             for _, zeile in geb_df.iterrows():
                 self.geburtstage_list.addItem(f"{zeile['Name']} — {zeile['Datum']} (in {zeile['In Tagen']} Tagen)")
 
-        self.jubilaeen_list.clear()
-        jub_df = mitglieder.mitgliedschaftsjubilaeen(df_gesamt)
-        if jub_df.empty:
-            self.jubilaeen_list.addItem("Keine Jubiläen dieses Jahr.")
+        self.naechste_zahlungen_list.clear()
+        faellig_liste = adapter.naechste_faellige_zahlungen(df_gesamt)
+        if not faellig_liste:
+            self.naechste_zahlungen_list.addItem("Keine anstehenden Zahlungen.")
         else:
-            for _, zeile in jub_df.iterrows():
-                self.jubilaeen_list.addItem(f"{zeile['Name']} — {zeile['Jahre dabei']} Jahre dabei")
-
-        self.entwicklung_widget.set_daten(adapter.mitgliederzahl_je_jahr(df_gesamt))
+            for eintrag in faellig_liste:
+                datum_anzeige = _format_datum_anzeige(eintrag["faelligkeitsdatum"])
+                if eintrag["tage"] < 0:
+                    hinweis = f"überfällig seit {-eintrag['tage']} Tagen"
+                elif eintrag["tage"] == 0:
+                    hinweis = "heute fällig"
+                else:
+                    hinweis = f"in {eintrag['tage']} Tagen"
+                self.naechste_zahlungen_list.addItem(f"{eintrag['name']} — {datum_anzeige} ({hinweis})")
 
         gefiltert = self._gefiltertes_df().reset_index(drop=True)
         self._gefiltert_ids = gefiltert["ID"].tolist()
@@ -1117,7 +1204,11 @@ class UebersichtPage(QWidget):
         self.table.setRowCount(len(gefiltert))
         for row, (_, member) in enumerate(gefiltert.iterrows()):
             for col, spalte in enumerate(self.anzeige_spalten):
-                self.table.setItem(row, col, QTableWidgetItem(str(member.get(spalte, ""))))
+                roh = str(member.get(spalte, ""))
+                if spalte in DATUMSFELDER:
+                    self.table.setItem(row, col, DatumTableWidgetItem(_format_datum_anzeige(roh), roh))
+                else:
+                    self.table.setItem(row, col, QTableWidgetItem(roh))
         self.table.setSortingEnabled(True)
         self.table.resizeColumnsToContents()
 
@@ -1242,10 +1333,10 @@ class ExcelImportDialog(QDialog):
     Zuordnung der Datei-Spalten zu den internen Feldern (statt einer fest
     erwarteten Kopfzeile wie beim einfachen Web-App-Import)."""
 
-    DATUMSFELDER = {
-        "Geburtstag", "Eintrittsdatum", "Austrittsdatum", "Einwilligung_Datum",
-        "Letzte_Zahlung", "SEPA_Mandatsdatum",
-    }
+    # Modul-Konstante DATUMSFELDER wiederverwenden (statt eigener Kopie) -
+    # enthält zusätzlich "Faelligkeitsdatum", das hier als Zuordnungsziel
+    # ohnehin nie vorkommt (kein echtes mitglieder.py-Feld), daher unschädlich.
+    DATUMSFELDER = DATUMSFELDER
     KEINE_ZUORDNUNG = "— nicht zuordnen —"
 
     def __init__(self, parent, main_window):
@@ -1603,7 +1694,11 @@ class SerienmailPage(QWidget):
         self.table.setRowCount(len(df))
         for row, (_, member) in enumerate(df.iterrows()):
             for col, spalte in enumerate(self.anzeige_spalten):
-                self.table.setItem(row, col, QTableWidgetItem(str(member.get(spalte, ""))))
+                roh = str(member.get(spalte, ""))
+                if spalte in DATUMSFELDER:
+                    self.table.setItem(row, col, DatumTableWidgetItem(_format_datum_anzeige(roh), roh))
+                else:
+                    self.table.setItem(row, col, QTableWidgetItem(roh))
         self.table.resizeColumnsToContents()
 
     def _auswahl_aktualisieren(self):
@@ -1812,7 +1907,11 @@ class BeitragsmahnungPage(QWidget):
         self.table.setRowCount(len(faellig_df))
         for row, (_, member) in enumerate(faellig_df.iterrows()):
             for col, spalte in enumerate(self.anzeige_spalten):
-                self.table.setItem(row, col, QTableWidgetItem(str(member.get(spalte, ""))))
+                roh = str(member.get(spalte, ""))
+                if spalte in DATUMSFELDER:
+                    self.table.setItem(row, col, DatumTableWidgetItem(_format_datum_anzeige(roh), roh))
+                else:
+                    self.table.setItem(row, col, QTableWidgetItem(roh))
         self.table.resizeColumnsToContents()
 
     def _auswahl_aktualisieren(self):
@@ -2038,7 +2137,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
 
         self.nav_list = QListWidget()
-        self.nav_list.addItems(["Übersicht", "Neues Mitglied", "Serienmail", "Beitragsmahnung", "Backup"])
+        self.nav_list.addItems(["Übersicht", "Neues Mitglied", "Serienmail", "Beitragsmahnung", "Mitgliederentwicklung", "Backup"])
         self.nav_list.currentRowChanged.connect(self._navigiere)
         sidebar_layout.addWidget(self.nav_list)
 
@@ -2073,11 +2172,13 @@ class MainWindow(QMainWindow):
         self.neues_mitglied_page = NeuesMitgliedPage(self)
         self.serienmail_page = SerienmailPage(self)
         self.beitragsmahnung_page = BeitragsmahnungPage(self)
+        self.entwicklung_page = MitgliederEntwicklungPage(self)
         self.backup_page = BackupPage(self)
         self.stack.addWidget(self.uebersicht_page)
         self.stack.addWidget(self.neues_mitglied_page)
         self.stack.addWidget(self.serienmail_page)
         self.stack.addWidget(self.beitragsmahnung_page)
+        self.stack.addWidget(self.entwicklung_page)
         self.stack.addWidget(self.backup_page)
         main_layout.addWidget(self.stack, stretch=1)
 
@@ -2107,6 +2208,8 @@ class MainWindow(QMainWindow):
         elif index == 3:
             self.beitragsmahnung_page.refresh_table()
         elif index == 4:
+            self.entwicklung_page.refresh()
+        elif index == 5:
             self.backup_page.refresh()
 
     def zeige_uebersicht(self):
