@@ -12,6 +12,7 @@ Aufbau (analog zu den drei Ansichten der Web-App):
 - Serienmail: Mehrfachauswahl + Versand über SMTP
 """
 
+import sys
 import time
 from pathlib import Path
 from datetime import date
@@ -1419,7 +1420,15 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Mitgliederverwaltung – Offline-Version")
-        icon_path = Path(__file__).parent.parent / "resources" / "icons" / "app.png"
+        # Im PyInstaller-Build sind gebündelte Ressourcendateien nicht relativ
+        # zu Path(__file__) zu finden (gui.py steckt im Programmarchiv, nicht
+        # als lose Datei) - sys._MEIPASS ist der von PyInstaller vorgesehene
+        # Weg, um zur Laufzeit an mitgelieferte Datendateien zu kommen.
+        if getattr(sys, "frozen", False):
+            ressourcen_root = Path(sys._MEIPASS)
+        else:
+            ressourcen_root = Path(__file__).parent.parent
+        icon_path = ressourcen_root / "resources" / "icons" / "app.png"
         if icon_path.exists():
             from PyQt5.QtGui import QIcon
 

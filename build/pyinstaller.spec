@@ -21,8 +21,10 @@ A = Analysis(
     datas=[
         (os.path.join(PROJECT_ROOT, "mitglieder.py"), "."),
         (os.path.join(PROJECT_ROOT, "mailer.py"), "."),
-        # Icon nur einbinden, falls vorhanden - andernfalls diese Zeile entfernen
-        # (os.path.join(PROJECT_ROOT, "resources", "icons", "app.ico"), "."),
+        # app.png wird zur Laufzeit ueber sys._MEIPASS gefunden (siehe
+        # gui.py, MainWindow.__init__) - muss daher unter demselben
+        # relativen Pfad "resources/icons" im Bundle landen.
+        (os.path.join(PROJECT_ROOT, "resources", "icons", "app.png"), os.path.join("resources", "icons")),
     ],
     hiddenimports=[
         'PyQt5',
@@ -68,7 +70,7 @@ exe = EXE(
     strip=False,
     upx=False,  # kein UPX: vermeidet Entpack-Overhead jeder DLL/.pyd beim Start (mehr Speicherplatz statt langsamerem Start)
     console=False,  # Windowed-Modus: kein zusätzliches Konsolenfenster - alle Meldungen laufen über QMessageBox
-    # icon='resources/icons/app.ico',  # einkommentieren, sobald ein Icon vorhanden ist
+    icon=os.path.join(PROJECT_ROOT, "resources", "icons", "app.ico"),
     uac_admin=False,
 )
 
