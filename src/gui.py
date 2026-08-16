@@ -707,6 +707,9 @@ class UebersichtPage(QWidget):
         self.metrics_label = QLabel()
         layout.addWidget(self.metrics_label)
 
+        self.gruppen_metrics_label = QLabel()
+        layout.addWidget(self.gruppen_metrics_label)
+
         anstehend_layout = QHBoxLayout()
         geb_box = QGroupBox("Geburtstage (nächste 30 Tage)")
         geb_layout = QVBoxLayout(geb_box)
@@ -783,6 +786,14 @@ class UebersichtPage(QWidget):
         status_zahlen = mitglieder.status_anzahl(df_gesamt)
         teile = [f"Gesamt: {gesamt}"] + [f"{status.capitalize()}: {anzahl}" for status, anzahl in status_zahlen.items()]
         self.metrics_label.setText("   |   ".join(teile))
+
+        gruppen_zahlen = {
+            gruppe: int(df_gesamt["Gruppen"].str.contains(gruppe, na=False).sum())
+            for gruppe in ["Aktive Mitglieder", "Fördernde Mitglieder"]
+        }
+        self.gruppen_metrics_label.setText(
+            "   |   ".join(f"{gruppe}: {anzahl}" for gruppe, anzahl in gruppen_zahlen.items())
+        )
 
         self.geburtstage_list.clear()
         geb_df = mitglieder.naechste_geburtstage(df_gesamt)
