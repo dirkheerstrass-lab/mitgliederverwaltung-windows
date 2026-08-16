@@ -20,7 +20,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QMessageBox
 import mitglieder_adapter as adapter
 from auth import login_dialog
-from gui import MainWindow
+from gui import MainWindow, APP_STYLESHEET
 
 def main():
     # Vor der QApplication-Erzeugung setzen, damit Qt konsistent mit der
@@ -30,6 +30,9 @@ def main():
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
+    # App-weit vor dem Login-Dialog gesetzt, damit auch dieser (auth.py)
+    # im einheitlichen Design (dunkle Sidebar, Amber-Akzent) erscheint.
+    app.setStyleSheet(APP_STYLESHEET)
 
     # Login-Dialog öffnen
     username = login_dialog()

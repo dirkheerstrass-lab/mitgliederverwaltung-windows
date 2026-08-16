@@ -60,7 +60,183 @@ COLUMNS = mitglieder.COLUMNS
 
 # Wird bei jedem Fix erhöht: kleine Fixes -> Nachkommastelle (1.00 -> 1.01),
 # größere/strukturelle Änderungen -> Vorkommastelle (1.05 -> 2.00, Nachkommastelle zurück auf 00).
-VERSION = "1.09"
+VERSION = "1.10"
+
+
+# ---------------------------------------------------------------------------
+# App-weites Design (abgerundete Karten-Optik, siehe Vorbild MemberViewDialog
+# "Mitglied anzeigen"-Karte). Wird in main.py per QApplication.setStyleSheet()
+# app-weit angewendet, damit auch der Login-Dialog (auth.py) davon profitiert.
+# Einzelne Widgets können das per eigenem .setStyleSheet()-Aufruf weiterhin
+# gezielt überschreiben (z. B. der "Bearbeiten"-Button in der Mitgliedskarte).
+# ---------------------------------------------------------------------------
+# Design C (Nutzer-Auswahl aus 3 Vorschlägen): dunkle Seitenleiste mit warmem
+# Amber-Akzent, heller/warmer Content-Bereich statt reinem Weiß.
+AKZENTFARBE = "#d9891f"
+AKZENTFARBE_HOVER = "#e79a34"
+AKZENTFARBE_PRESSED = "#b5680f"
+AKZENT_TEXT = "#2c1c04"  # dunkler Text auf der hellen Amber-Fläche (Kontrast)
+
+SIDEBAR_BG = "#26313f"
+SIDEBAR_TEXT = "#c7cfd8"
+SIDEBAR_ACTIVE_BG = "#3a4a5c"
+SIDEBAR_MUTED = "#8894a3"
+
+INHALT_BG = "#fbfbfa"
+
+APP_STYLESHEET = f"""
+QWidget {{
+    font-size: 10pt;
+}}
+
+QMainWindow {{
+    background-color: {INHALT_BG};
+}}
+
+QGroupBox {{
+    background-color: white;
+    border: 1px solid #e6e2da;
+    border-radius: 8px;
+    margin-top: 14px;
+    padding-top: 12px;
+    font-weight: bold;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+}}
+
+QPushButton {{
+    background-color: {AKZENTFARBE};
+    color: {AKZENT_TEXT};
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+}}
+QPushButton:hover {{
+    background-color: {AKZENTFARBE_HOVER};
+}}
+QPushButton:pressed {{
+    background-color: {AKZENTFARBE_PRESSED};
+}}
+QPushButton:disabled {{
+    background-color: rgba(127, 127, 127, 90);
+    color: rgba(255, 255, 255, 160);
+}}
+QPushButton[gefahr="true"] {{
+    background-color: #c0392b;
+    color: white;
+}}
+QPushButton[gefahr="true"]:hover {{
+    background-color: #d24030;
+}}
+QPushButton[flach="true"] {{
+    background-color: transparent;
+    color: {AKZENTFARBE_PRESSED};
+    border: none;
+    text-decoration: underline;
+    padding: 2px;
+}}
+QPushButton[flach="true"]:hover {{
+    color: {AKZENTFARBE};
+}}
+
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QDateEdit, QDoubleSpinBox, QSpinBox {{
+    border: 1px solid #ddd8cc;
+    border-radius: 6px;
+    padding: 4px 6px;
+    background-color: white;
+}}
+QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QDateEdit:focus, QDoubleSpinBox:focus {{
+    border: 1px solid {AKZENTFARBE};
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 20px;
+}}
+
+QTableWidget {{
+    border: 1px solid #e6e2da;
+    border-radius: 8px;
+    gridline-color: #eee;
+    background-color: white;
+    alternate-background-color: #fdfbf7;
+}}
+QHeaderView::section {{
+    background-color: #f1ede4;
+    padding: 6px;
+    border: none;
+    font-weight: bold;
+}}
+
+QTabWidget::pane {{
+    border: 1px solid #e6e2da;
+    border-radius: 8px;
+    padding: 8px;
+    top: -1px;
+    background-color: white;
+}}
+QTabBar::tab {{
+    background: #f1ede4;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 6px 14px;
+    margin-right: 2px;
+}}
+QTabBar::tab:selected {{
+    background: {AKZENTFARBE};
+    color: {AKZENT_TEXT};
+}}
+
+QListWidget {{
+    border: none;
+    background: transparent;
+}}
+QListWidget::item {{
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin: 2px 4px;
+}}
+QListWidget::item:selected {{
+    background: {AKZENTFARBE};
+    color: {AKZENT_TEXT};
+}}
+QListWidget::item:hover:!selected {{
+    background: rgba(127, 127, 127, 25);
+}}
+
+/* Seitenleiste (Design C): dunkler Hintergrund, eigene Nav-/Button-Optik */
+QWidget#sidebar {{
+    background-color: {SIDEBAR_BG};
+}}
+QWidget#sidebar QListWidget {{
+    background: transparent;
+    border: none;
+}}
+QWidget#sidebar QListWidget::item {{
+    color: {SIDEBAR_TEXT};
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin: 2px 4px;
+    border-left: 3px solid transparent;
+}}
+QWidget#sidebar QListWidget::item:selected {{
+    background: {SIDEBAR_ACTIVE_BG};
+    color: white;
+    border-left: 3px solid {AKZENTFARBE};
+}}
+QWidget#sidebar QListWidget::item:hover:!selected {{
+    background: rgba(255, 255, 255, 20);
+}}
+QWidget#sidebar QLabel {{
+    color: {SIDEBAR_MUTED};
+}}
+QWidget#sidebar QPushButton {{
+    font-size: 9pt;
+    padding: 5px 10px;
+}}
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +668,7 @@ class MemberViewDialog(QDialog):
         foto_spalte.addWidget(self.foto_label, alignment=Qt.AlignHCenter)
         self.foto_hochladen_btn = QPushButton("📤 Profilbild hochladen")
         self.foto_hochladen_btn.setFlat(True)
-        self.foto_hochladen_btn.setStyleSheet("color: #2a6ebb; border: none; text-decoration: underline;")
+        self.foto_hochladen_btn.setProperty("flach", True)
         self.foto_hochladen_btn.clicked.connect(self._foto_hochladen)
         foto_spalte.addWidget(self.foto_hochladen_btn, alignment=Qt.AlignHCenter)
         foto_spalte.addStretch(1)
@@ -709,7 +885,7 @@ class MemberEditDialog(QDialog):
 
         # --- Löschen ---
         self.loeschen_btn = QPushButton("Mitglied löschen")
-        self.loeschen_btn.setStyleSheet("color: darkred;")
+        self.loeschen_btn.setProperty("gefahr", True)
         self.loeschen_btn.clicked.connect(self._mitglied_loeschen)
         content_layout.addWidget(self.loeschen_btn)
 
@@ -1003,7 +1179,7 @@ class MitgliederEntwicklungWidget(QWidget):
             x = i * balken_platz + (balken_platz - balken_breite) / 2
             y = hoehe - rand_unten - balken_hoehe
 
-            painter.setBrush(QColor("#2a6ebb"))
+            painter.setBrush(QColor(AKZENTFARBE_PRESSED))
             painter.setPen(Qt.NoPen)
             painter.drawRect(int(x), int(y), int(balken_breite), int(balken_hoehe))
 
@@ -1124,7 +1300,7 @@ class UebersichtPage(QWidget):
         self.sammel_status_setzen_btn = QPushButton("Status setzen für Auswahl")
         self.sammel_status_setzen_btn.clicked.connect(self._sammel_status_setzen)
         self.sammel_loeschen_btn = QPushButton("Ausgewählte löschen")
-        self.sammel_loeschen_btn.setStyleSheet("color: darkred;")
+        self.sammel_loeschen_btn.setProperty("gefahr", True)
         self.sammel_loeschen_btn.clicked.connect(self._sammel_loeschen)
         sammel_layout.addWidget(self.sammel_status_combo)
         sammel_layout.addWidget(self.sammel_status_setzen_btn)
@@ -2232,13 +2408,20 @@ class MainWindow(QMainWindow):
         main_layout = QHBoxLayout(central)
 
         sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
 
         self.nav_list = QListWidget()
         self.nav_list.addItems(["Übersicht", "Neues Mitglied", "Serienmail", "Beitragsmahnung", "Mitgliederentwicklung", "Backup"])
         self.nav_list.currentRowChanged.connect(self._navigiere)
-        sidebar_layout.addWidget(self.nav_list)
+        # Stretch-Faktor 1 statt eines nachfolgenden addStretch(1): das
+        # Karten-Design gibt jedem Eintrag mehr Innenabstand/Rand als der
+        # Qt-Standard, wodurch QListWidgets Standard-sizeHint (nicht an den
+        # tatsächlichen Inhalt gekoppelt) sonst zu klein ausfällt und
+        # untere Einträge (z. B. "Backup") in einer internen Scrollleiste
+        # verschwinden. Mit stretch=1 füllt die Liste den verfügbaren Platz.
+        sidebar_layout.addWidget(self.nav_list, stretch=1)
 
         # Breite anhand der tatsächlichen Textbreite des längsten Eintrags
         # berechnen statt eines festen Pixelwerts - passt sich dadurch
@@ -2248,8 +2431,6 @@ class MainWindow(QMainWindow):
         sidebar_breite = self._berechne_sidebar_breite(self.nav_list)
         sidebar.setMinimumWidth(sidebar_breite)
         sidebar.setMaximumWidth(sidebar_breite)
-
-        sidebar_layout.addStretch(1)
 
         version_label = QLabel(f"v{VERSION}")
         version_label.setStyleSheet("color: gray; padding: 4px;")
