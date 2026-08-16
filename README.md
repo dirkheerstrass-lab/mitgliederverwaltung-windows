@@ -57,6 +57,9 @@ mit einem Standard-Login angelegt:
 - **Benutzername:** `admin`
 - **Passwort:** `admin123`
 
+Das Passwort lässt sich über den Button "Passwort ändern..." in der Seitenleiste
+jederzeit ändern (aktuelles Passwort wird zur Bestätigung abgefragt).
+
 Alternativ (nach dem Build, siehe unten):
 
 ```powershell
@@ -75,7 +78,7 @@ Nach dem Login öffnet sich das Hauptfenster mit fünf Ansichten in der Seitenle
 | **Neues Mitglied** | Formular in 3 Tabs — Persönliche Daten, Gruppen & Mitgliedschaft, Konto & SEPA (inkl. IBAN/Kontoinhaber/Mandatsreferenz) —, optional Foto + Anhänge |
 | **Serienmail** | Mehrfachauswahl, Betreff/Text mit Platzhaltern (`{Vorname}` etc.), Versand per SMTP, Mail-Log je Mitglied |
 | **Beitragsmahnung** | Liste fälliger Mitglieder (berechnet aus letzter Zahlung + Zahlungsrhythmus), Mahnungsversand mit Platzhaltern, „Kassierer benachrichtigen“-Sammelmail |
-| **Backup** | Backup als ZIP erstellen/wiederherstellen (mit doppelter Bestätigung), automatische Sicherheits-Backups vor jedem Restore |
+| **Backup** | Backup als ZIP erstellen/wiederherstellen (mit doppelter Bestätigung), optional AES-verschlüsselt (Passwort), automatische Sicherheits-Backups vor jedem Restore |
 
 Der Bearbeiten-Dialog (aus der Übersicht) enthält zusätzlich: Foto
 hinzufügen/löschen, Anhänge hinzufügen/öffnen/löschen, Mail-Verlauf, Zahlung

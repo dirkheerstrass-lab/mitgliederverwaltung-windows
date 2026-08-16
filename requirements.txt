@@ -6,3 +6,4 @@ openpyxl>=3.1,<4
 fpdf2>=2.7.6,<3
 pypdf>=4.0,<5
 reportlab>=4.0,<5
+pyzipper>=0.3.6,<1

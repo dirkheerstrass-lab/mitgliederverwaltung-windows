@@ -216,6 +216,69 @@ def naechste_freie_mitgliedsnummer(df) -> str:
     return str(kandidat)
 
 
+# --- Backup-Verschlüsselung (Windows-App-spezifisch, mitglieder.py bleibt roh) ---
+#
+# mitglieder.build_backup_zip()/restore_from_backup() erzeugen/lesen bewusst
+# unverschlüsselte ZIPs (identisch zur Web-App). Die Backup-Datei enthält aber
+# IBAN, Adressen und Fotos im Klartext - für den Fall, dass sie z. B. per
+# Mail an ein anderes Vorstandsmitglied weitergegeben wird, bietet die
+# Windows-App hier eine optionale AES-Verschlüsselung on top an. Python-
+# Standard-zipfile kann keine echte Verschlüsselung, daher pyzipper (AES-256).
+
+
+def verschluessele_zip(zip_bytes: bytes, passwort: str) -> bytes:
+    """Nimmt ein von mitglieder.build_backup_zip() erzeugtes Klartext-ZIP und
+    verschlüsselt jeden Eintrag AES-256 mit dem übergebenen Passwort."""
+    import io
+    import zipfile
+    import pyzipper
+
+    quelle = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    puffer = io.BytesIO()
+    with pyzipper.AESZipFile(
+        puffer, "w", compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES
+    ) as zf:
+        zf.setpassword(passwort.encode("utf-8"))
+        for name in quelle.namelist():
+            zf.writestr(name, quelle.read(name))
+    return puffer.getvalue()
+
+
+def entschluessele_zip(zip_bytes: bytes, passwort: str) -> bytes:
+    """Kehrt verschluessele_zip() um - liefert wieder ein normales
+    Klartext-ZIP, das mitglieder.restore_from_backup() verarbeiten kann.
+    Wirft ValueError bei falschem Passwort oder beschädigter Datei."""
+    import io
+    import zipfile
+    import pyzipper
+
+    puffer = io.BytesIO()
+    try:
+        quelle = pyzipper.AESZipFile(io.BytesIO(zip_bytes))
+        quelle.setpassword(passwort.encode("utf-8"))
+        namen = quelle.namelist()
+        with zipfile.ZipFile(puffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for name in namen:
+                zf.writestr(name, quelle.read(name))
+    except (RuntimeError, pyzipper.BadZipFile) as exc:
+        raise ValueError("Falsches Passwort oder beschädigte Backup-Datei.") from exc
+    return puffer.getvalue()
+
+
+def ist_verschluesseltes_backup(zip_bytes: bytes) -> bool:
+    """Erkennt, ob ein Backup-ZIP mit verschluessele_zip() erzeugt wurde -
+    Backup-Dialoge nutzen das, um beim Wiederherstellen automatisch zu
+    entscheiden, ob vorher ein Passwort abgefragt werden muss."""
+    import io
+    import pyzipper
+
+    try:
+        zf = pyzipper.AESZipFile(io.BytesIO(zip_bytes))
+        return any(info.flag_bits & 0x1 for info in zf.infolist())
+    except Exception:
+        return False
+
+
 # --- Spalten-Sichtbarkeit in der Übersichtstabelle (lokal gespeichert) ---
 
 SPALTEN_CONFIG_FILE = Path.home() / "AppData" / "Roaming" / "Mitgliederverwaltung" / "spalten_config.json"

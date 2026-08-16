@@ -52,6 +52,7 @@ from PyQt5.QtWidgets import (
     QInputDialog,
 )
 
+import auth
 import mitglieder_adapter as adapter
 from mitglieder_adapter import mitglieder, mailer, LocalUploadedFile
 
@@ -59,7 +60,7 @@ COLUMNS = mitglieder.COLUMNS
 
 # Wird bei jedem Fix erhöht: kleine Fixes -> Nachkommastelle (1.00 -> 1.01),
 # größere/strukturelle Änderungen -> Vorkommastelle (1.05 -> 2.00, Nachkommastelle zurück auf 00).
-VERSION = "1.08"
+VERSION = "1.09"
 
 
 # ---------------------------------------------------------------------------
@@ -1836,6 +1837,59 @@ class SmtpSettingsDialog(QDialog):
         self.accept()
 
 
+class PasswortAendernDialog(QDialog):
+    """Ändert das Login-Passwort des aktuell angemeldeten Benutzers. Es gibt
+    keine separate Rechteverwaltung - jeder eingeloggte Benutzer darf sein
+    eigenes Passwort ändern (analog zum bisherigen einzigen Standard-Login)."""
+
+    def __init__(self, username: str, parent=None):
+        super().__init__(parent)
+        self.username = username
+        self.setWindowTitle("Passwort ändern")
+        layout = QFormLayout(self)
+
+        self.aktuell_edit = QLineEdit()
+        self.aktuell_edit.setEchoMode(QLineEdit.Password)
+        self.neu_edit = QLineEdit()
+        self.neu_edit.setEchoMode(QLineEdit.Password)
+        self.neu_bestaetigen_edit = QLineEdit()
+        self.neu_bestaetigen_edit.setEchoMode(QLineEdit.Password)
+
+        layout.addRow("Aktuelles Passwort:", self.aktuell_edit)
+        layout.addRow("Neues Passwort:", self.neu_edit)
+        layout.addRow("Neues Passwort wiederholen:", self.neu_bestaetigen_edit)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self._speichern)
+        button_box.rejected.connect(self.reject)
+        layout.addRow(button_box)
+
+    def _speichern(self):
+        aktuell = self.aktuell_edit.text()
+        neu = self.neu_edit.text()
+        neu_bestaetigt = self.neu_bestaetigen_edit.text()
+
+        if not auth.authenticate(self.username, aktuell):
+            QMessageBox.warning(self, "Fehler", "Das aktuelle Passwort ist falsch.")
+            return
+        if not neu:
+            QMessageBox.warning(self, "Fehler", "Das neue Passwort darf nicht leer sein.")
+            return
+        if neu != neu_bestaetigt:
+            QMessageBox.warning(self, "Fehler", "Die beiden neuen Passwörter stimmen nicht überein.")
+            return
+
+        daten = auth.get_users()
+        for benutzer in daten.get("users", []):
+            if benutzer["username"] == self.username:
+                benutzer["password_hash"] = auth.hash_password(neu)
+                benutzer["is_default"] = False
+                break
+        auth.save_users(daten)
+        QMessageBox.information(self, "Erfolg", "Passwort wurde geändert.")
+        self.accept()
+
+
 # ---------------------------------------------------------------------------
 # Beitragsmahnung
 # ---------------------------------------------------------------------------
@@ -1995,6 +2049,22 @@ class BeitragsmahnungPage(QWidget):
 # ---------------------------------------------------------------------------
 # Backup
 # ---------------------------------------------------------------------------
+def _passwort_mit_bestaetigung_abfragen(parent, titel: str) -> str | None:
+    """Fragt zweimal ein Passwort ab (Eingabe + Bestätigung), um Tippfehler
+    beim Backup-Verschlüsseln zu vermeiden. Gibt None zurück bei Abbruch,
+    leerem Passwort oder wenn beide Eingaben nicht übereinstimmen."""
+    passwort, ok = QInputDialog.getText(parent, titel, "Passwort:", QLineEdit.Password)
+    if not ok or not passwort:
+        return None
+    bestaetigung, ok = QInputDialog.getText(parent, titel, "Passwort wiederholen:", QLineEdit.Password)
+    if not ok:
+        return None
+    if passwort != bestaetigung:
+        QMessageBox.warning(parent, "Fehler", "Die beiden Passwörter stimmen nicht überein.")
+        return None
+    return passwort
+
+
 BACKUP_BESTAETIGUNGSTEXT = "WIEDERHERSTELLEN"
 
 
@@ -2008,8 +2078,13 @@ class BackupPage(QWidget):
         erstellen_layout = QVBoxLayout(erstellen_box)
         erstellen_layout.addWidget(QLabel(
             "Erstellt ein ZIP-Archiv mit allen Mitgliederdaten (CSV, Fotos, "
-            "Anhänge, Mail-Verlauf, Zahlungshistorie)."
+            "Anhänge, Mail-Verlauf, Zahlungshistorie).\n"
+            "⚠️ Das Backup enthält IBAN, Adressen und Fotos im Klartext - "
+            "beim Weitergeben (z. B. per Mail) empfiehlt sich die "
+            "Verschlüsselung."
         ))
+        self.backup_verschluesseln_check = QCheckBox("Mit Passwort verschlüsseln (empfohlen)")
+        erstellen_layout.addWidget(self.backup_verschluesseln_check)
         self.backup_erstellen_btn = QPushButton("Backup erstellen...")
         self.backup_erstellen_btn.clicked.connect(self._backup_erstellen)
         erstellen_layout.addWidget(self.backup_erstellen_btn)
@@ -2020,7 +2095,9 @@ class BackupPage(QWidget):
         restore_layout.addWidget(QLabel(
             "⚠️ Ersetzt den kompletten aktuellen Datenbestand durch den Inhalt "
             "eines zuvor erstellten Backups. Vor dem Wiederherstellen wird "
-            "automatisch ein Sicherheits-Backup des aktuellen Standes angelegt."
+            "automatisch ein Sicherheits-Backup des aktuellen Standes angelegt. "
+            "Verschlüsselte Backups werden automatisch erkannt, dann wird das "
+            "Passwort abgefragt."
         ))
         self.backup_wiederherstellen_btn = QPushButton("Backup wiederherstellen...")
         self.backup_wiederherstellen_btn.clicked.connect(self._backup_wiederherstellen)
@@ -2052,19 +2129,41 @@ class BackupPage(QWidget):
             self.sicherheitsbackups_list.addItem(item)
 
     def _backup_erstellen(self):
+        zip_bytes = mitglieder.build_backup_zip()
+
+        if self.backup_verschluesseln_check.isChecked():
+            passwort = _passwort_mit_bestaetigung_abfragen(self, "Backup-Passwort festlegen")
+            if passwort is None:
+                return
+            zip_bytes = adapter.verschluessele_zip(zip_bytes, passwort)
+
         zeitstempel = date.today().isoformat()
         ziel, _ = QFileDialog.getSaveFileName(
             self, "Backup speichern", f"mitgliederverwaltung_backup_{zeitstempel}.zip", "ZIP-Archiv (*.zip)"
         )
         if not ziel:
             return
-        Path(ziel).write_bytes(mitglieder.build_backup_zip())
+        Path(ziel).write_bytes(zip_bytes)
         QMessageBox.information(self, "Erfolg", "Backup wurde gespeichert.")
 
     def _backup_wiederherstellen(self):
         quelle, _ = QFileDialog.getOpenFileName(self, "Backup auswählen", "", "ZIP-Archiv (*.zip)")
         if not quelle:
             return
+
+        zip_bytes = Path(quelle).read_bytes()
+        if adapter.ist_verschluesseltes_backup(zip_bytes):
+            passwort, ok = QInputDialog.getText(
+                self, "Backup verschlüsselt", "Bitte Backup-Passwort eingeben:",
+                QLineEdit.Password,
+            )
+            if not ok or not passwort:
+                return
+            try:
+                zip_bytes = adapter.entschluessele_zip(zip_bytes, passwort)
+            except ValueError as exc:
+                QMessageBox.critical(self, "Entschlüsselung fehlgeschlagen", str(exc))
+                return
 
         antwort = QMessageBox.warning(
             self, "Wiederherstellen bestätigen",
@@ -2085,7 +2184,6 @@ class BackupPage(QWidget):
             return
 
         try:
-            zip_bytes = Path(quelle).read_bytes()
             mitglieder.restore_from_backup(zip_bytes)
         except mitglieder.UngueltigesBackup as exc:
             QMessageBox.critical(self, "Ungültiges Backup", str(exc))
@@ -2110,8 +2208,9 @@ class BackupPage(QWidget):
 # Hauptfenster
 # ---------------------------------------------------------------------------
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, username: str = "admin"):
         super().__init__()
+        self.username = username
         self.setWindowTitle("Mitgliederverwaltung – Offline-Version")
         # Im PyInstaller-Build sind gebündelte Ressourcendateien nicht relativ
         # zu Path(__file__) zu finden (gui.py steckt im Programmarchiv, nicht
@@ -2159,6 +2258,11 @@ class MainWindow(QMainWindow):
         autor_label = QLabel("by Dirk Heerstraß")
         autor_label.setStyleSheet("color: gray; padding: 0 4px 4px 4px; font-size: 10px;")
         sidebar_layout.addWidget(autor_label)
+
+        passwort_aendern_btn = QPushButton("Passwort ändern...")
+        passwort_aendern_btn.setStyleSheet("padding: 2px;")
+        passwort_aendern_btn.clicked.connect(self._passwort_aendern)
+        sidebar_layout.addWidget(passwort_aendern_btn)
 
         update_check_btn = QPushButton("Nach Updates suchen")
         update_check_btn.setStyleSheet("padding: 2px;")
@@ -2214,6 +2318,10 @@ class MainWindow(QMainWindow):
 
     def zeige_uebersicht(self):
         self.nav_list.setCurrentRow(0)
+
+    def _passwort_aendern(self):
+        dlg = PasswortAendernDialog(self.username, self)
+        dlg.exec_()
 
     def _nach_updates_suchen(self):
         GUI_PY_URL = (

@@ -38,7 +38,7 @@ def main():
         return
 
     # Login erfolgreich → Hauptfenster öffnen
-    window = MainWindow()
+    window = MainWindow(username)
     window.show()
 
     # Einmalige Migrationsmeldung, falls beim Import von mitglieder_adapter
