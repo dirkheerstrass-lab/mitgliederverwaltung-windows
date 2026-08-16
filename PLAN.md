@@ -44,6 +44,7 @@ ohne beide Repos neu abzugleichen.
 
 ## Backlog / noch nicht portiert
 
+- [ ] **Fenster beim Start mittig auf dem Bildschirm platzieren, ggf. passend skaliert**: `MainWindow` (`src/gui.py`, `__init__`) ruft aktuell nur `self.resize(1100, 750)` auf — die Startposition überlässt Windows/Qt dem Standardverhalten (meist oben links oder letzte Fensterposition des Systems), nicht zentriert. Umsetzungsidee: nach dem `resize()`-Aufruf (oder in `main.py` direkt vor `window.show()`) die verfügbare Bildschirmgeometrie ermitteln (`QApplication.primaryScreen().availableGeometry()` bzw. bei Multi-Monitor-Setups den Screen, auf dem sich der Mauszeiger/das Elternfenster befindet) und das Fenster mittig darin platzieren (`window.move(...)`, Berechnung analog zu `QStyle.alignedRect` oder einfacher manueller Mittelpunktsberechnung). "Passend skaliert" zusätzlich beachten: falls die verfügbare Bildschirmfläche kleiner als die feste Zielgröße 1100×750 ist (z. B. kleine Laptop-Displays, Skalierung >100 %), die initiale Fenstergröße an `availableGeometry()` anpassen (z. B. min(1100, verfügbare Breite − Rand), min(750, verfügbare Höhe − Rand)) statt eine feste Größe zu erzwingen, die dann über den Bildschirmrand hinausragt.
 - [ ] **Kalender**-Ansicht: Vereinstermine anlegen/löschen, `.ics`-Feed-Export
 - [ ] **Terminabfrage**: Doodle-artige Ja/Nein/Vielleicht-Umfragen unter Mitgliedern
 - [ ] Weitere PDF-Exporte: Beitrittserklärung, Austrittsbestätigung, Aufnahmeantrag (Letzterer benötigt zusätzlich `vorlagen/aufnahmeantrag_vorlage.pdf` — noch nicht in dieses Repo kopiert)
