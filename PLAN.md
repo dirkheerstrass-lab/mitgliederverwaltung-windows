@@ -22,6 +22,9 @@ ohne beide Repos neu abzugleichen.
 - [x] **Backup/Restore**: Backup als ZIP erstellen, Wiederherstellen (mit doppelter Bestätigung inkl. Bestätigungstext-Eingabe), automatische Sicherheits-Backups vor jedem Restore mit Einzel-Download
 - [x] Lokale Authentifizierung (users.json in %APPDATA%)
 - [x] Windows-.exe-Build via PyInstaller
+- [x] **Update-Check-Button** (v1.01): vergleicht lokale `VERSION` gegen `src/gui.py` auf `main` im GitHub-Repo (jetzt öffentlich, daher ohne Auth per `raw.githubusercontent.com` abrufbar)
+- [x] **Spalten in der Übersichtstabelle ein-/ausblenden** (v1.01): `SpaltenAuswahlDialog`, Auswahl persistiert in `%APPDATA%\Mitgliederverwaltung\spalten_config.json`
+- [x] **Suche über mehr Felder** (v1.01): zusätzlich zu Vorname/Nachname jetzt auch Mitgliedsnummer, Stadt, Telefon
 
 ## Backlog / noch nicht portiert
 
@@ -63,10 +66,19 @@ ohne beide Repos neu abzugleichen.
 
 - [ ] **Mitgliedsnummer-Vergabe: kleinste freie Nummer statt höchste+1**: neue Hilfsfunktion, die vorhandene `Mitgliedsnummer`-Werte aus `df["Mitgliedsnummer"]` einsammelt (nur numerische), als Menge behandelt und die kleinste positive ganze Zahl findet, die **nicht** enthalten ist (löst also zuerst Lücken durch ausgetretene/gelöschte Mitglieder, erst danach die nächsthöhere Zahl). Als Vorschlag im "Neues Mitglied"-Formular anzeigen (Button "Vorschlagen" neben dem Mitgliedsnummer-Feld), nicht automatisch fest eintragen — frei überschreibbar.
 - [ ] **Sammelaktionen in der Übersicht**: `UebersichtPage`-Tabelle auf Mehrfachauswahl umstellen (aktuell nur Einzelauswahl fürs Bearbeiten). Sammel-Buttons z. B. "Status setzen für Auswahl", "Ausgewählte löschen" (mit derselben Bestätigungslogik wie Einzel-Löschen).
-- [ ] **Spalten in der Übersichtstabelle ein-/ausblenden**: Kontextmenü oder kleines Einstellungs-Icon über der Tabelle, das die Sichtbarkeit einzelner Spalten umschaltet (`QTableWidget.setColumnHidden`), Auswahl ggf. persistent speichern (z. B. in `%APPDATA%` analog `smtp_config.json`). 28 Spalten sind aktuell sehr breit/unübersichtlich.
-- [ ] **Suche über mehr Felder**: `suche_edit` in `UebersichtPage` aktuell nur gegen Vorname/Nachname (`str.contains`). Erweitern auf Mitgliedsnummer, Stadt, Telefon (mehrere `str.contains`-Bedingungen mit ODER verknüpft, analog bestehendem Muster).
 - [ ] **Statistik/Diagramm zur Mitgliederentwicklung**: neuer kleiner Bereich (z. B. in der Übersicht oder eigene Ansicht), Mitgliederzahl je Jahr basierend auf `Eintrittsdatum`/`Austrittsdatum` auswerten, einfaches Balken-/Liniendiagramm (z. B. `QtCharts` falls verfügbar, sonst `QPainter` oder Zusatzbibliothek wie `matplotlib` — Bibliothekswahl erst bei Umsetzung entscheiden). Praktisch für die Mitgliederversammlung.
-- [ ] **Update-Check-Button in der App**: Button/Menüpunkt "Nach Updates suchen", vergleicht lokale `VERSION`-Konstante (`src/gui.py`) mit dem aktuellen `VERSION`-Wert direkt in `src/gui.py` auf `main` im GitHub-Repo (z. B. via GitHub-API `/repos/.../contents/src/gui.py` oder `raw.githubusercontent.com`-Abruf, Wert per Regex extrahieren — kein Release-/Tag-Mechanismus nötig, da `VERSION` laut gelebter Konvention bei jeder Repo-Änderung hochgezählt wird). Zeigt Hinweis, falls die Remote-Version höher ist als die lokale, mit Anleitung "`update_und_bauen.bat` ausführen".
+
+## Hinweis zur Repo-Sichtbarkeit
+
+Das Repo wurde am 2026-08-16 von privat auf **öffentlich** umgestellt, damit
+der Update-Check-Button `src/gui.py` unauthentifiziert über
+`raw.githubusercontent.com` abrufen kann (private Repos liefern dort ohne
+Login `404`). Vorher per Git-Historie geprüft: es wurden nie `data/`,
+`backups/` oder Konfigurationsdateien mit echten Mitgliederdaten committet —
+nur Code und das öffentliche Vereinslogo. Falls sich das je ändert (z. B.
+versehentlich sensible Daten committet), Repo-Historie bereinigen, bevor es
+wieder privat gestellt wird — ein einfacher Sichtbarkeitswechsel entfernt
+bereits geklonte/gecachte Kopien nicht rückwirkend.
 
 ## Hinweis zur Datenschicht
 

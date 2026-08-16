@@ -90,3 +90,30 @@ def smtp_secrets_wrapper() -> dict:
     smtp_konfiguration() nur "in", "[...]" und .get() auf dem smtp-Teil nutzt."""
     smtp = load_smtp_config()
     return {"smtp": smtp} if smtp else {}
+
+
+# --- Spalten-Sichtbarkeit in der Übersichtstabelle (lokal gespeichert) ---
+
+SPALTEN_CONFIG_FILE = Path.home() / "AppData" / "Roaming" / "Mitgliederverwaltung" / "spalten_config.json"
+
+
+def load_ausgeblendete_spalten() -> list:
+    """Lädt die Liste der vom Nutzer ausgeblendeten Spaltennamen der
+    Übersichtstabelle. Gibt eine leere Liste zurück, falls noch keine
+    Auswahl gespeichert wurde (Standard: alle Spalten sichtbar)."""
+    if not SPALTEN_CONFIG_FILE.exists():
+        return []
+    import json
+
+    try:
+        daten = json.loads(SPALTEN_CONFIG_FILE.read_text(encoding="utf-8"))
+        return daten.get("ausgeblendet", [])
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def save_ausgeblendete_spalten(spalten: list) -> None:
+    import json
+
+    SPALTEN_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SPALTEN_CONFIG_FILE.write_text(json.dumps({"ausgeblendet": spalten}, indent=2), encoding="utf-8")

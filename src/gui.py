@@ -12,6 +12,7 @@ Aufbau (analog zu den drei Ansichten der Web-App):
 - Serienmail: Mehrfachauswahl + Versand über SMTP
 """
 
+import re
 import sys
 import time
 from pathlib import Path
@@ -58,7 +59,7 @@ COLUMNS = mitglieder.COLUMNS
 
 # Wird bei jedem Fix erhöht: kleine Fixes -> Nachkommastelle (1.00 -> 1.01),
 # größere/strukturelle Änderungen -> Vorkommastelle (1.05 -> 2.00, Nachkommastelle zurück auf 00).
-VERSION = "1.00"
+VERSION = "1.01"
 
 
 # ---------------------------------------------------------------------------
@@ -699,6 +700,52 @@ class MemberEditDialog(QDialog):
 # ---------------------------------------------------------------------------
 # Übersicht (Tabelle + Filter + Metriken + Geburtstage/Jubiläen)
 # ---------------------------------------------------------------------------
+class SpaltenAuswahlDialog(QDialog):
+    """Dialog zum Ein-/Ausblenden einzelner Spalten der Übersichtstabelle."""
+
+    def __init__(self, parent, alle_spalten: list, ausgeblendet: list):
+        super().__init__(parent)
+        self.setWindowTitle("Spalten auswählen")
+        self.resize(300, 500)
+        outer = QVBoxLayout(self)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        outer.addWidget(scroll, stretch=1)
+        content = QWidget()
+        scroll.setWidget(content)
+        content_layout = QVBoxLayout(content)
+
+        self._checkboxen = {}
+        for spalte in alle_spalten:
+            checkbox = QCheckBox(spalte)
+            checkbox.setChecked(spalte not in ausgeblendet)
+            content_layout.addWidget(checkbox)
+            self._checkboxen[spalte] = checkbox
+        content_layout.addStretch(1)
+
+        alle_btn_row = QHBoxLayout()
+        alle_anzeigen_btn = QPushButton("Alle anzeigen")
+        alle_anzeigen_btn.clicked.connect(lambda: self._alle_setzen(True))
+        alle_ausblenden_btn = QPushButton("Alle ausblenden")
+        alle_ausblenden_btn.clicked.connect(lambda: self._alle_setzen(False))
+        alle_btn_row.addWidget(alle_anzeigen_btn)
+        alle_btn_row.addWidget(alle_ausblenden_btn)
+        outer.addLayout(alle_btn_row)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        outer.addWidget(button_box)
+
+    def _alle_setzen(self, sichtbar: bool):
+        for checkbox in self._checkboxen.values():
+            checkbox.setChecked(sichtbar)
+
+    def ausgeblendete_spalten(self) -> list:
+        return [spalte for spalte, checkbox in self._checkboxen.items() if not checkbox.isChecked()]
+
+
 class UebersichtPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
@@ -733,7 +780,7 @@ class UebersichtPage(QWidget):
         self.gruppe_filter.addItems(["Alle"] + mitglieder.GRUPPEN_OPTIONEN)
         self.gruppe_filter.currentTextChanged.connect(self.refresh_table)
         self.suche_edit = QLineEdit()
-        self.suche_edit.setPlaceholderText("Suche (Name)")
+        self.suche_edit.setPlaceholderText("Suche (Name, Mitgliedsnummer, Stadt, Telefon)")
         self.suche_edit.textChanged.connect(self.refresh_table)
         filter_layout.addWidget(QLabel("Status:"))
         filter_layout.addWidget(self.status_filter)
@@ -752,19 +799,34 @@ class UebersichtPage(QWidget):
         self.table.setSortingEnabled(True)
         self.table.doubleClicked.connect(self.edit_selected)
         layout.addWidget(self.table, stretch=1)
+        self._spalten_sichtbarkeit_anwenden()
 
         btn_layout = QHBoxLayout()
         self.bearbeiten_btn = QPushButton("Bearbeiten (Doppelklick)")
         self.bearbeiten_btn.clicked.connect(self.edit_selected)
+        self.spalten_btn = QPushButton("Spalten...")
+        self.spalten_btn.clicked.connect(self.spalten_auswaehlen)
         self.excel_export_btn = QPushButton("📊 Als Excel exportieren")
         self.excel_export_btn.clicked.connect(self.excel_exportieren)
         self.pdf_export_btn = QPushButton("📄 Als PDF exportieren")
         self.pdf_export_btn.clicked.connect(self.pdf_exportieren)
         btn_layout.addWidget(self.bearbeiten_btn)
+        btn_layout.addWidget(self.spalten_btn)
         btn_layout.addStretch(1)
         btn_layout.addWidget(self.excel_export_btn)
         btn_layout.addWidget(self.pdf_export_btn)
         layout.addLayout(btn_layout)
+
+    def _spalten_sichtbarkeit_anwenden(self):
+        ausgeblendet = adapter.load_ausgeblendete_spalten()
+        for col, spalte in enumerate(self.anzeige_spalten):
+            self.table.setColumnHidden(col, spalte in ausgeblendet)
+
+    def spalten_auswaehlen(self):
+        dlg = SpaltenAuswahlDialog(self, self.anzeige_spalten, adapter.load_ausgeblendete_spalten())
+        if dlg.exec_() == QDialog.Accepted:
+            adapter.save_ausgeblendete_spalten(dlg.ausgeblendete_spalten())
+            self._spalten_sichtbarkeit_anwenden()
 
     def _gefiltertes_df(self):
         df = mitglieder.load_data()
@@ -777,6 +839,9 @@ class UebersichtPage(QWidget):
             maske = (
                 df["Vorname"].str.contains(suche, case=False, na=False)
                 | df["Nachname"].str.contains(suche, case=False, na=False)
+                | df["Mitgliedsnummer"].str.contains(suche, case=False, na=False)
+                | df["Stadt"].str.contains(suche, case=False, na=False)
+                | df["Telefon"].str.contains(suche, case=False, na=False)
             )
             df = df[maske]
         return df
@@ -1463,6 +1528,11 @@ class MainWindow(QMainWindow):
         version_label.setStyleSheet("color: gray; padding: 4px;")
         sidebar_layout.addWidget(version_label)
 
+        update_check_btn = QPushButton("Nach Updates suchen")
+        update_check_btn.setStyleSheet("padding: 2px;")
+        update_check_btn.clicked.connect(self._nach_updates_suchen)
+        sidebar_layout.addWidget(update_check_btn)
+
         main_layout.addWidget(sidebar)
 
         self.stack = QStackedWidget()
@@ -1508,6 +1578,44 @@ class MainWindow(QMainWindow):
 
     def zeige_uebersicht(self):
         self.nav_list.setCurrentRow(0)
+
+    def _nach_updates_suchen(self):
+        GUI_PY_URL = (
+            "https://raw.githubusercontent.com/dirkheerstrass-lab/"
+            "mitgliederverwaltung-windows/main/src/gui.py"
+        )
+        try:
+            import requests
+
+            antwort = requests.get(GUI_PY_URL, timeout=5)
+            antwort.raise_for_status()
+        except Exception as exc:
+            QMessageBox.warning(
+                self, "Update-Check fehlgeschlagen",
+                f"Es konnte nicht geprüft werden, ob eine neue Version verfügbar ist "
+                f"(keine Internetverbindung oder GitHub nicht erreichbar):\n{exc}",
+            )
+            return
+
+        treffer = re.search(r'VERSION\s*=\s*"([\d.]+)"', antwort.text)
+        if not treffer:
+            QMessageBox.warning(self, "Update-Check fehlgeschlagen", "Version konnte auf GitHub nicht ermittelt werden.")
+            return
+
+        remote_version = treffer.group(1)
+        try:
+            neuer_stand = tuple(int(teil) for teil in remote_version.split(".")) > tuple(int(teil) for teil in VERSION.split("."))
+        except ValueError:
+            neuer_stand = remote_version != VERSION
+
+        if neuer_stand:
+            QMessageBox.information(
+                self, "Update verfügbar",
+                f"Eine neue Version ist verfügbar: v{remote_version} (installiert: v{VERSION}).\n\n"
+                f"Zum Aktualisieren \"update_und_bauen.bat\" im Programmordner ausführen.",
+            )
+        else:
+            QMessageBox.information(self, "Kein Update verfügbar", f"Du nutzt bereits die aktuelle Version (v{VERSION}).")
 
 
 if __name__ == "__main__":
