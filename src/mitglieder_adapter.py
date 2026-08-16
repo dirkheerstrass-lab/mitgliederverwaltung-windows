@@ -167,6 +167,39 @@ def mitgliederzahl_je_jahr(df) -> list:
     return ergebnis
 
 
+def naechste_faellige_zahlungen(df, tage: int = 30) -> list:
+    """Liefert eine nach Fälligkeit aufsteigend sortierte Liste anstehender
+    und bereits überfälliger Beitragszahlungen - Basis für die
+    "Nächste Zahlung fällig"-Liste in der Übersicht. Anders als
+    mitglieder.faellige_mitglieder() (nur bereits überfällige Mitglieder mit
+    E-Mail, für den Mahnungsversand) werden hier auch demnächst fällige
+    Mitglieder sowie Mitglieder ohne E-Mail berücksichtigt, da es nur um die
+    Anzeige geht. Mitglieder ohne Letzte_Zahlung (keine Fälligkeit berechenbar)
+    werden übersprungen. Jeder Eintrag enthält "name", "faelligkeitsdatum"
+    (ISO) und "tage" (negativ = überfällig, 0 = heute, positiv = demnächst)."""
+    from datetime import date
+
+    heute = date.today()
+    eintraege = []
+    for _, zeile in df.iterrows():
+        if not zeile.get("Letzte_Zahlung"):
+            continue
+        faelligkeit = mitglieder.compute_next_due(zeile["Letzte_Zahlung"], zeile.get("Zahlungsrhythmus", ""))
+        if not faelligkeit:
+            continue
+        faelligkeit_datum = mitglieder.parse_datum(faelligkeit)
+        differenz = (faelligkeit_datum - heute).days
+        if differenz > tage:
+            continue
+        eintraege.append({
+            "name": f"{zeile['Vorname']} {zeile['Nachname']}",
+            "faelligkeitsdatum": faelligkeit,
+            "tage": differenz,
+        })
+    eintraege.sort(key=lambda e: e["tage"])
+    return eintraege
+
+
 def naechste_freie_mitgliedsnummer(df) -> str:
     """Ermittelt die kleinste positive ganze Zahl, die noch nicht als
     Mitgliedsnummer vergeben ist - löst also zuerst Lücken durch
