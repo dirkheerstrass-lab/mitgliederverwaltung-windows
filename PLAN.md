@@ -29,7 +29,18 @@ ohne beide Repos neu abzugleichen.
 - [ ] **Terminabfrage**: Doodle-artige Ja/Nein/Vielleicht-Umfragen unter Mitgliedern
 - [ ] **Excel-Mitgliederimport**: Massenimport im „Neues Mitglied“-Formular der Web-App (`import_members_from_excel`, `build_import_vorlage`)
 - [ ] Weitere PDF-Exporte: Beitrittserklärung, Austrittsbestätigung, Aufnahmeantrag (Letzterer benötigt zusätzlich `vorlagen/aufnahmeantrag_vorlage.pdf` — noch nicht in dieses Repo kopiert)
-- [ ] Server-Synchronisation (Phase 2, `src/sync.py` ist bewusst nur ein Platzhalter)
+- ~~Server-Synchronisation (Phase 2)~~ — **bewusst verworfen** (2026-08-16):
+  Nur eine Person (Dirk) pflegt die Mitgliederdaten, es gibt keinen
+  Mehrbenutzer-Bedarf mit gleichzeitigem Zugriff. Eine Online-/Server-
+  Architektur (zentrale API auf dem vorhandenen vServer, Windows-App als
+  Client) würde dafür unnötige Komplexität bedeuten (API-Bau, Auth pro
+  Nutzer, Konfliktbehandlung bei gleichzeitigem Schreiben). Die bereits
+  vorhandene **Backup/Restore-Funktion** deckt den eigentlichen Bedarf
+  (Sicherung, gelegentlicher Austausch mit anderen Vorstandsmitgliedern per
+  ZIP-Datei) bereits vollständig ab. `src/sync.py` bleibt daher dauerhaft nur
+  ein unbenutzter Platzhalter — falls sich der Bedarf ändert (z. B. mehrere
+  Personen sollen künftig gleichzeitig live arbeiten), diese Entscheidung neu
+  bewerten.
 - [ ] Richtiger Installer/Setup.exe (z. B. Inno Setup oder NSIS), der den `dist/Mitgliederverwaltung/`-Ordner für Endnutzer verpackt/installiert. Der Build ist bewusst als "onedir" mit vielen losen Dateien in `_internal/` gehalten (schnellerer Start als eine kompakt gepackte `.exe`) — ein Installer soll das später für Endnutzer unsichtbar machen.
 - [ ] SMTP-Einstellungen (`SmtpSettingsDialog`, `src/gui.py`): beim Speichern einmal die Verbindung testen (z. B. `smtplib`-Login mit den eingegebenen Zugangsdaten versuchen), statt Fehler erst beim nächsten Serienmail-/Beitragsmahnung-Versand zu bemerken. Bei Fehlschlag Meldung anzeigen, Speichern aber trotzdem erlauben (falls z. B. gerade kein Internet verfügbar ist).
 - [ ] Unter der Versionsnummer in der Seitenleiste (`version_label`, `src/gui.py`, `MainWindow.__init__`) zusätzlich „by Dirk Heerstraß“ anzeigen.
